@@ -1,0 +1,7 @@
+[
+  { "titre": "Répétition pitch", "debut": "2026-09-17T17:00", "fin": "2026-09-17T17:30" },
+  { "titre": "Point équipe", "debut": "2026-09-18T11:00",
+ "agenda": "Travail" },
+  { "titre": "Sans date" },
+  { "titre": "Mauvais agenda", "debut": "2026-09-18T15:00", "agenda": "Vacances" }
+]
