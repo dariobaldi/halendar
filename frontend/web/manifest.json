@@ -1,11 +1,11 @@
 {
-    "name": "halendar_front",
-    "short_name": "halendar_front",
+    "name": "Halendar",
+    "short_name": "Halendar",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Halendar.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

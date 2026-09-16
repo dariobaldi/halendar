@@ -86,12 +86,3 @@ func (app *app) notPermittedResponse(w http.ResponseWriter, r *http.Request) {
 	app.errorResponse(w, r, http.StatusForbidden, message)
 }
 
-func (app *app) outsideWorkingHoursResponse(w http.ResponseWriter, r *http.Request) {
-	message := "le serveur n'est pas disponible en dehors des heures de travail"
-	app.errorResponse(w, r, http.StatusTeapot, message)
-}
-
-func (app *app) unsupportedFileResponse(w http.ResponseWriter, r *http.Request) {
-	message := "unsupported file type"
-	app.errorResponse(w, r, http.StatusBadRequest, message)
-}
