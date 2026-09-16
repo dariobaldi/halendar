@@ -60,7 +60,7 @@ func (app *app) badRequestResponse(w http.ResponseWriter, r *http.Request, err e
 }
 
 func (app *app) invalidCredentialsResponse(w http.ResponseWriter, r *http.Request) {
-	message := "les identifiants ne sont pas valides"
+	message := "invalid credentials"
 	app.errorResponse(w, r, http.StatusUnauthorized, message)
 }
 
@@ -85,4 +85,3 @@ func (app *app) notPermittedResponse(w http.ResponseWriter, r *http.Request) {
 	message := "your user account does not have the necessary permissions to access this resource"
 	app.errorResponse(w, r, http.StatusForbidden, message)
 }
-

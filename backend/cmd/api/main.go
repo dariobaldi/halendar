@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dariobaldi/halendar_back/internal/calendar"
 	"github.com/dariobaldi/halendar_back/internal/data"
-	"github.com/dariobaldi/halendar_back/internal/mail"
 	"github.com/dariobaldi/halendar_back/internal/mailer"
 	"github.com/dariobaldi/halendar_back/internal/vcs"
 	"github.com/dariobaldi/halendar_back/internal/websocket"
 	_ "github.com/lib/pq"
 	"golang.org/x/time/rate"
+	"halendar/calendar"
+	"halendar/mail"
 )
 
 var (
