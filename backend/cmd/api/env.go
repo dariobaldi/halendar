@@ -43,6 +43,9 @@ func (cfg *config) GetVariables() {
 	cfg.smtp.username = getEnvString("SMTP_USERNAME", "username")
 	cfg.smtp.password = getEnvString("SMTP_PASSWORD", "password")
 	cfg.smtp.sender = getEnvString("SMTP_SENDER", "Halendar <no-reply@yourdomain.com>")
+
+	cfg.ollama.baseURL = getEnvString("OLLAMA_BASE_URL", "http://ollama:11434")
+	cfg.ollama.model = getEnvString("OLLAMA_MODEL", "gemma3:1b")
 }
 
 // GETENV HELPERS

@@ -13,6 +13,7 @@ import (
 
 	"github.com/dariobaldi/halendar_back/internal/data"
 	"github.com/dariobaldi/halendar_back/internal/mailer"
+	"github.com/dariobaldi/halendar_back/internal/ollama"
 	"github.com/dariobaldi/halendar_back/internal/vcs"
 	"github.com/dariobaldi/halendar_back/internal/websocket"
 	_ "github.com/lib/pq"
@@ -50,6 +51,10 @@ type config struct {
 		password string
 		sender   string
 	}
+	ollama struct {
+		baseURL string
+		model   string
+	}
 }
 
 type client struct {
@@ -65,6 +70,7 @@ type app struct {
 	mailer          mailer.Mailer
 	mailbox         *mail.Mailbox
 	calendar        *calendar.Client
+	ollama          *ollama.Client
 	models          data.Models
 	mu              sync.Mutex
 	websockets      map[string]*websocket.Hub
@@ -142,6 +148,7 @@ func main() {
 		mailer:     mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
 		mailbox:    mail.New(mail.ConfigFromEnv()),
 		calendar:   calendar.New(calendar.ConfigFromEnv()),
+		ollama:     ollama.New(cfg.ollama.baseURL, cfg.ollama.model),
 		websockets: make(map[string]*websocket.Hub),
 	}
 

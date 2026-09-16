@@ -57,5 +57,9 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodGet, "/v1/schedule/propose/:uid", app.requirePermission(UserLevel, app.proposeScheduleHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/schedule/confirm", app.requirePermission(UserLevel, app.confirmScheduleHandler))
 
+	// AI: test connectivity to the local Ollama model
+	router.HandlerFunc(http.MethodPost, "/v1/ai/prompt", app.requirePermission(UserLevel, app.promptHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/ai/test", app.requirePermission(UserLevel, app.testPromptHandler))
+
 	return app.recoverPanic(app.enableCORS(app.rateLimit(app.authenticate(app.requestsSlog(router)))))
 }
