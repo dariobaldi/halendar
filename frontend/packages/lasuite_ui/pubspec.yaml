@@ -1,0 +1,22 @@
+name: lasuite_ui
+description: >
+  Flutter-native design system implementing the La Suite numérique UI Kit
+  (design tokens, theme and components) for use across Flutter applications.
+version: 0.1.0
+homepage: https://github.com/suitenumerique/ui-kit
+repository: https://github.com/suitenumerique/ui-kit
+
+environment:
+  sdk: ^3.13.3
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:

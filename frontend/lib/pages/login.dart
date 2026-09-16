@@ -1,10 +1,10 @@
-import 'package:halendar_front/components/my_button.dart';
-import 'package:halendar_front/components/my_container.dart';
 import 'package:halendar_front/components/my_textformfield.dart';
-import 'package:halendar_front/components/responsive.dart';
 import 'package:halendar_front/services/auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lasuite_ui/lasuite_ui.dart';
+
+import '../widgets/theme_toggle_button.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -80,31 +80,6 @@ class _LoginMenuSPage extends State<LoginPage> {
     }
   }
 
-  Widget loginMenu(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: MyContainer(
-        width: 350,
-        height: 470,
-        color: Theme.of(context).colorScheme.surface,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Logo
-            Image.asset(
-              "./lib/images/logo/ic_launcher.png",
-              height: 200,
-              width: 290,
-            ),
-
-            // username input
-            loginForm(context),
-          ],
-        ),
-      ),
-    );
-  }
-
   Form loginForm(BuildContext context) {
     return Form(
       key: _formKey,
@@ -117,39 +92,37 @@ class _LoginMenuSPage extends State<LoginPage> {
               obscureText: false,
               onEnter: signUserIn,
               hints: const [AutofillHints.username, AutofillHints.email],
+              width: null,
             ),
 
             const SizedBox(height: 20),
             // password input
-            Stack(
-              alignment: Alignment.centerRight,
-              children: [
-                MyTextFormField(
-                  controller: passwordController,
-                  lableText: 'Mot de passe',
-                  obscureText: !showPassword,
-                  onEnter: signUserIn,
-                  hints: const [AutofillHints.password],
+            MyTextFormField(
+              controller: passwordController,
+              lableText: 'Mot de passe',
+              obscureText: !showPassword,
+              onEnter: signUserIn,
+              hints: const [AutofillHints.password],
+              width: null,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  showPassword ? Icons.visibility_off : Icons.visibility,
                 ),
-                Positioned(
-                  right: 25,
-                  child: Checkbox(
-                    checkColor: Theme.of(context).colorScheme.onPrimary,
-                    activeColor: Theme.of(context).colorScheme.primary,
-                    value: showPassword,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        showPassword = value ?? false;
-                      });
-                    },
-                  ),
-                ),
-              ],
+                onPressed: () {
+                  setState(() {
+                    showPassword = !showPassword;
+                  });
+                },
+              ),
             ),
 
             const SizedBox(height: 20),
             // login button
-            MyButton(text: 'Se Connecter', onTap: signUserIn),
+            LaButton(
+              label: 'Se Connecter',
+              fullWidth: true,
+              onPressed: () => signUserIn(context),
+            ),
           ],
         ),
       ),
@@ -158,73 +131,51 @@ class _LoginMenuSPage extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.laColors;
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Responsive(
-        mobile: LoginPageMobile(loginMenu: loginMenu(context)),
-        tablet: LoginPageDesktop(loginMenu: loginMenu(context)),
-        desktop: LoginPageDesktop(loginMenu: loginMenu(context)),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: const [ThemeToggleButton()],
       ),
-    );
-  }
-}
-
-class LoginPageMobile extends StatelessWidget {
-  final Widget loginMenu;
-  const LoginPageMobile({super.key, required this.loginMenu});
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(),
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Image.asset("lib/images/graphics/bg_top_left.png", scale: 6),
-          ),
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: Image.asset(
-              "lib/images/graphics/bg_bottom_right.png",
-              scale: 6,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(LaSpacing.md),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Halendar',
+                    textAlign: TextAlign.center,
+                    style: LaTextStyles.h4.copyWith(
+                      color: colors.contentNeutralPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: LaSpacing.x2xs),
+                  Text(
+                    'Sign in to your account',
+                    textAlign: TextAlign.center,
+                    style: LaTextStyles.bodySm.copyWith(
+                      color: colors.contentNeutralTertiary,
+                    ),
+                  ),
+                  const SizedBox(height: LaSpacing.md),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(LaSpacing.base),
+                      child: loginForm(context),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          loginMenu,
-        ],
+        ),
       ),
-    );
-  }
-}
-
-class LoginPageDesktop extends StatelessWidget {
-  final Widget loginMenu;
-  const LoginPageDesktop({super.key, required this.loginMenu});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(),
-        Positioned(
-          top: 0,
-          left: 0,
-          child: Image.asset("lib/images/graphics/bg_top_left.png", scale: 3),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Image.asset(
-            "lib/images/graphics/bg_bottom_right.png",
-            scale: 3,
-          ),
-        ),
-        loginMenu,
-      ],
     );
   }
 }

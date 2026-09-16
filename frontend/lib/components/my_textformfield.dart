@@ -9,6 +9,7 @@ class MyTextFormField extends StatelessWidget {
   final double? width;
   final String? Function(String?)? validator;
   final void Function(PointerDownEvent)? onTapOutside;
+  final Widget? suffixIcon;
 
   const MyTextFormField({
     super.key,
@@ -20,6 +21,7 @@ class MyTextFormField extends StatelessWidget {
     this.width = 300,
     this.validator,
     this.onTapOutside,
+    this.suffixIcon,
   });
 
   @override
@@ -49,6 +51,7 @@ class MyTextFormField extends StatelessWidget {
                     BorderSide(color: Theme.of(context).colorScheme.primary),
               ),
               labelText: lableText,
+              suffixIcon: suffixIcon,
             ),
             onTapOutside: onTapOutside,
           ),
