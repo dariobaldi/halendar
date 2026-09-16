@@ -1,7 +1,7 @@
 # Halendar
 
 A small Go toolkit for reading/sending mail over IMAP/SMTP and managing a
-CalDAV calendar, plus a CLI that drives both. Three independent packages —
+CalDAV calendar, plus a CLI that drives both. Four independent packages —
 import them into another program, or use `main.go` as-is.
 
 ## Install
@@ -27,20 +27,20 @@ go run . health          # confirms both connections work
 | `busy <start> <end>` | checks whether a slot is free |
 | `add event.json` | adds or updates one or more events |
 | `delete <uid> [calendar]` | deletes an event |
-| `schedule <uid>` | books the first free slot proposed in a mail, replies confirming it |
+| `schedule <uid>` | proposes a slot from a mail; books it and replies only on confirmation |
 
 Sample payloads live in [`examples/`](examples/).
 
 `schedule` looks for lines like `2026-09-18 14:00-14:30` in the mail body, checks
-each against the calendar with `Busy`, books the first free one, and replies in
-the same thread with a plain confirmation message — no AI involved yet. That
-message is the one seam meant to be swapped out later for a backend-generated
-one, without touching the booking logic.
+each against the calendar with `Busy`, and shows the first free one — title,
+time, and the reply it would send — before doing anything. It only books the
+event and sends the reply once you confirm.
 
 ## Packages
 
 - **`mail`** — `Mailbox`: read (`Recent`, `Search`, `Read`, `NewSince`), send (`Send`, `Reply`, `SaveDraft`), and manage (`MarkRead`, `Move`, `Folders`) a mail account.
 - **`calendar`** — `Client`: `Events`, `Busy`, `Add`, `Delete` against a CalDAV calendar. `Event` decodes directly from JSON (`duration_minutes`, all-day dates, timezone).
+- **`schedule`** — turns a mail into a booking in two steps: `Propose` (read-only: picks the first free slot, builds the confirmation message) and `Confirm` (books it and sends the reply). The split exists so a caller — this CLI, or a future backend endpoint — can show the user the proposal and only act on explicit approval. `Propose`'s message is a plain template for now; swapping in an AI-generated one later means changing what gets passed in, not `Propose`/`Confirm` themselves.
 - **`envfile`** — loads `.env` into the process environment; nothing fancier.
 - **`testutil`** — fake IMAP/SMTP/CalDAV servers used by the tests below.
 

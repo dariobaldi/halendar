@@ -12,7 +12,7 @@
 //	go run . busy <start> <end>       checks whether a slot is free
 //	go run . add event.json           adds (or updates) one or more events
 //	go run . delete <uid>             deletes an event
-//	go run . schedule <uid>           books the first free slot proposed in a mail, and replies
+//	go run . schedule <uid>           proposes a slot from a mail; books and replies on confirmation
 package main
 
 import (
@@ -318,4 +318,4 @@ const helpText = `Commands:
   go run . busy <start> <end>       checks whether a slot is free
   go run . add event.json           adds (or updates) one or more events
   go run . delete <uid>             deletes an event
-  go run . schedule <uid>           books the first free slot proposed in a mail, and replies`
+  go run . schedule <uid>           proposes a slot from a mail; books and replies on confirmation`
