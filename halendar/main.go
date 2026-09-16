@@ -9,8 +9,10 @@
 //	go run . reply <uid> "text"       replies in the same thread
 //	go run . draft send.json          saves the mail to Drafts
 //	go run . calendar [days]          upcoming schedule
+//	go run . busy <start> <end>       checks whether a slot is free
 //	go run . add event.json           adds (or updates) one or more events
 //	go run . delete <uid>             deletes an event
+//	go run . schedule <uid>           books the first free slot proposed in a mail, and replies
 package main
 
 import (
@@ -64,10 +66,14 @@ func run(ctx context.Context, cmd string, args []string, mailbox *mail.Mailbox, 
 		return runReply(ctx, mailbox, args)
 	case "calendar":
 		return runCalendar(ctx, cal, args)
+	case "busy":
+		return runBusy(ctx, cal, args)
 	case "add":
 		return runAdd(ctx, cal, args)
 	case "delete":
 		return runDelete(ctx, cal, args)
+	case "schedule":
+		return runSchedule(ctx, mailbox, cal, args)
 	}
 	return fmt.Errorf("unknown command %q\n\n%s", cmd, helpText)
 }
@@ -309,5 +315,7 @@ const helpText = `Commands:
   go run . reply <uid> "text"       replies in the same thread
   go run . draft send.json          saves the mail to Drafts
   go run . calendar [days]          upcoming schedule
+  go run . busy <start> <end>       checks whether a slot is free
   go run . add event.json           adds (or updates) one or more events
-  go run . delete <uid>             deletes an event`
+  go run . delete <uid>             deletes an event
+  go run . schedule <uid>           books the first free slot proposed in a mail, and replies`
