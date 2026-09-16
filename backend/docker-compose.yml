@@ -2,6 +2,7 @@ services:
   halendar-api:
     depends_on:
       - postgres
+      - ollama
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,6 +14,33 @@ services:
     volumes:
       - halendar-api:/app/data
     restart: always
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: halendar-ollama
+    restart: always
+    # No "ports:" mapping: like postgres, it is reachable only from other
+    # containers on the compose network (as "http://ollama:11434"), never
+    # from the host or the outside world.
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:1b}
+    volumes:
+      - halendar-ollama:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        ollama serve &
+        server_pid=$$!
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        if ! ollama list | tail -n +2 | awk '{print $$1}' | grep -qx "$$OLLAMA_MODEL"; then
+          echo "Pulling model $$OLLAMA_MODEL ..."
+          ollama pull "$$OLLAMA_MODEL"
+        else
+          echo "Model $$OLLAMA_MODEL already present, skipping pull."
+        fi
+        wait "$$server_pid"
 
   postgres:
     image: postgres:15.5
@@ -42,8 +70,11 @@ networks:
 volumes:
   halendar-db:
     external: true
-  
+
   halendar-api:
+    external: true
+
+  halendar-ollama:
     external: true
 
   config_files:

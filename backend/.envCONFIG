@@ -42,3 +42,10 @@ CALDAV_USER=user@icloud.com
 CALDAV_PASS=anAppPassword
 CALDAV_CALENDAR=
 CALDAV_TIMEZONE=Europe/Paris
+
+# Local LLM (docker-compose "ollama" service, not reachable outside the compose
+# network). Pulled automatically on first start if not already in the volume.
+# OLLAMA_BASE_URL defaults to the in-network service address and normally
+# doesn't need to be set; override it only when running the API outside compose.
+OLLAMA_MODEL=gemma3:1b
+OLLAMA_BASE_URL=http://ollama:11434

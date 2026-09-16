@@ -21,7 +21,7 @@ func (app *app) routes() http.Handler {
 	// Admin
 	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
 	router.HandlerFunc(http.MethodGet, "/v1/requests_stats", app.requirePermission(AdminLevel, app.requestsStatsHandler))
-	
+
 	// Users
 	router.HandlerFunc(http.MethodGet, "/v1/users", app.requirePermission(AdminLevel, app.getUsersHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/users", app.requirePermission(AdminLevel, app.registerUserHandler))
@@ -52,6 +52,14 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/calendar/events", app.requirePermission(UserLevel, app.addEventsHandler))
 	router.HandlerFunc(http.MethodDelete, "/v1/calendar/events/:uid", app.requirePermission(UserLevel, app.deleteEventHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/calendar/busy", app.requirePermission(UserLevel, app.checkBusyHandler))
+
+	// Schedule: propose a slot from a mail, book it only once the caller confirms
+	router.HandlerFunc(http.MethodGet, "/v1/schedule/propose/:uid", app.requirePermission(UserLevel, app.proposeScheduleHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/schedule/confirm", app.requirePermission(UserLevel, app.confirmScheduleHandler))
+
+	// AI: test connectivity to the local Ollama model
+	router.HandlerFunc(http.MethodPost, "/v1/ai/prompt", app.requirePermission(UserLevel, app.promptHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/ai/test", app.requirePermission(UserLevel, app.testPromptHandler))
 
 	return app.recoverPanic(app.enableCORS(app.rateLimit(app.authenticate(app.requestsSlog(router)))))
 }

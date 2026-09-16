@@ -18,21 +18,6 @@ func (app *app) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	channel := params.ByName("channel")
 	permittedChannels := []string{
 		"halendar",
-		"delivengo_depots",
-		"files",
-		"home",
-		"listings",
-		"marketplaces",
-		"notes",
-		"orders",
-		"packageReturns",
-		"packing",
-		"picking",
-		"picking_items",
-		"picking_groups",
-		"products",
-		"scan",
-		"tasks",
 	}
 
 	v := validator.New()

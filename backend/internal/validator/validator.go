@@ -7,10 +7,8 @@ import (
 )
 
 var (
-	EmailRX            = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	FraudEmailRX       = regexp.MustCompile(`^[^@]*33[^@]*@`)
-	MarketplaceEmailRX = regexp.MustCompile(`^[^@]+@[^@]*\b(ebay|amazon)\b[^@]*$`)
-	UsernameRx         = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,20}$`)
+	EmailRX    = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	UsernameRx = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,20}$`)
 )
 
 type Validator struct {

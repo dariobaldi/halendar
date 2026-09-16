@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dariobaldi/halendar_back/internal/calendar"
 	"github.com/dariobaldi/halendar_back/internal/validator"
+	"halendar/calendar"
 )
 
 // calendarHealthHandler checks that the configured CalDAV connection works.

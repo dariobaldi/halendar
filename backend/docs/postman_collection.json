@@ -1,0 +1,293 @@
+{
+	"info": {
+		"_postman_id": "b1a2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+		"name": "Halendar API - Mail, Calendar, Schedule, AI",
+		"description": "The new backend endpoints: reading/sending mail (IMAP/SMTP), reading/writing calendar events (CalDAV), proposing/confirming a booking from a mail, and testing the local Ollama model. All requests use the collection-level Bearer token ({{token}}) and {{baseUrl}}.\n\nSet {{baseUrl}} to http://127.0.0.1:4355 for the docker-compose deployment, and {{token}} to a valid authentication token (POST /v1/users/authentication).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://127.0.0.1:4355", "type": "string" },
+		{ "key": "token", "value": "", "type": "string" },
+		{ "key": "uid", "value": "1", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "Mail",
+			"item": [
+				{
+					"name": "Health",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/v1/mail/health", "host": ["{{baseUrl}}"], "path": ["v1", "mail", "health"] }
+					}
+				},
+				{
+					"name": "List folders",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/v1/mail/folders", "host": ["{{baseUrl}}"], "path": ["v1", "mail", "folders"] }
+					}
+				},
+				{
+					"name": "List / search messages",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/v1/mail/messages?limit=20",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "mail", "messages"],
+							"query": [
+								{ "key": "limit", "value": "20", "description": "used when no search filter below is set" },
+								{ "key": "unread", "value": "true", "disabled": true },
+								{ "key": "since", "value": "2026-09-01T00:00:00Z", "disabled": true },
+								{ "key": "before", "value": "2026-09-30T00:00:00Z", "disabled": true },
+								{ "key": "from", "value": "claire@example.com", "disabled": true },
+								{ "key": "subject", "value": "sync", "disabled": true },
+								{ "key": "contains", "value": "roadmap", "disabled": true }
+							]
+						},
+						"description": "With no filter query params, returns the `limit` most recent messages. Enable any of unread/since/before/from/subject/contains to run a search instead."
+					}
+				},
+				{
+					"name": "Read one message",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/v1/mail/messages/:uid",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "mail", "messages", ":uid"],
+							"variable": [{ "key": "uid", "value": "{{uid}}" }]
+						}
+					}
+				},
+				{
+					"name": "Reply to a message",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": {
+							"raw": "{{baseUrl}}/v1/mail/messages/:uid/reply",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "mail", "messages", ":uid", "reply"],
+							"variable": [{ "key": "uid", "value": "{{uid}}" }]
+						},
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Thursday 2pm works for me.\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				},
+				{
+					"name": "Send a message",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/mail/send", "host": ["{{baseUrl}}"], "path": ["v1", "mail", "send"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"to\": [\"someone@example.com\"],\n  \"cc\": [],\n  \"subject\": \"Hello from Postman\",\n  \"text\": \"This is a test email.\",\n  \"html\": \"\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				},
+				{
+					"name": "Save as draft",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/mail/draft", "host": ["{{baseUrl}}"], "path": ["v1", "mail", "draft"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"to\": [\"someone@example.com\"],\n  \"subject\": \"Draft from Postman\",\n  \"text\": \"To review before sending.\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				},
+				{
+					"name": "Mark read / unread",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/mail/read", "host": ["{{baseUrl}}"], "path": ["v1", "mail", "read"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"uids\": [{{uid}}],\n  \"read\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				},
+				{
+					"name": "Move messages",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/mail/move", "host": ["{{baseUrl}}"], "path": ["v1", "mail", "move"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"folder\": \"Archives\",\n  \"uids\": [{{uid}}]\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Calendar",
+			"item": [
+				{
+					"name": "Health",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/v1/calendar/health", "host": ["{{baseUrl}}"], "path": ["v1", "calendar", "health"] }
+					}
+				},
+				{
+					"name": "List calendars",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/v1/calendar/calendars", "host": ["{{baseUrl}}"], "path": ["v1", "calendar", "calendars"] }
+					}
+				},
+				{
+					"name": "List events",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/v1/calendar/events?start=2026-09-20T00:00:00Z&end=2026-09-27T00:00:00Z",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "calendar", "events"],
+							"query": [
+								{ "key": "start", "value": "2026-09-20T00:00:00Z" },
+								{ "key": "end", "value": "2026-09-27T00:00:00Z" }
+							]
+						},
+						"description": "start/end default to now / now+7 days when omitted."
+					}
+				},
+				{
+					"name": "Add / update event",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/calendar/events", "host": ["{{baseUrl}}"], "path": ["v1", "calendar", "events"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Hackathon pitch\",\n  \"start\": \"2026-09-20T14:00\",\n  \"duration_minutes\": 30,\n  \"status\": \"confirmed\",\n  \"location\": \"Room 1\",\n  \"description\": \"Created from Postman\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"description": "Accepts a single event object (shown here) or a JSON array to add several at once. The same UID updates an existing event instead of duplicating it."
+					}
+				},
+				{
+					"name": "Delete event",
+					"request": {
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/v1/calendar/events/:uid?calendar=",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "calendar", "events", ":uid"],
+							"query": [{ "key": "calendar", "value": "", "description": "optional calendar name; default calendar used if omitted" }],
+							"variable": [{ "key": "uid", "value": "evt-xxxxxxxx" }]
+						}
+					}
+				},
+				{
+					"name": "Check busy",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/v1/calendar/busy?start=2026-09-20T14:00:00Z&end=2026-09-20T15:00:00Z",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "calendar", "busy"],
+							"query": [
+								{ "key": "start", "value": "2026-09-20T14:00:00Z" },
+								{ "key": "end", "value": "2026-09-20T15:00:00Z" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Schedule",
+			"item": [
+				{
+					"name": "Propose a slot from a mail",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/v1/schedule/propose/:uid",
+							"host": ["{{baseUrl}}"],
+							"path": ["v1", "schedule", "propose", ":uid"],
+							"variable": [{ "key": "uid", "value": "{{uid}}" }]
+						},
+						"description": "Read-only: parses time slots out of the mail body, picks the first free one, and returns the event + reply it *would* book/send. Nothing is booked yet."
+					}
+				},
+				{
+					"name": "Confirm proposal (books + replies)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/schedule/confirm", "host": ["{{baseUrl}}"], "path": ["v1", "schedule", "confirm"] },
+						"body": {
+							"mode": "raw",
+							"raw": "// Paste the exact \"proposal\" object returned by \"Propose a slot from a mail\" here.\n// Example shape:\n{\n  \"Mail\": { \"uid\": 1, \"id\": \"<meeting@x>\", \"from\": \"claire@example.com\", \"subject\": \"Project sync\", \"text\": \"...\" },\n  \"Slot\": { \"Start\": \"2026-09-20T14:00:00+02:00\", \"End\": \"2026-09-20T14:30:00+02:00\" },\n  \"Event\": { \"title\": \"Project sync\", \"start\": \"2026-09-20T14:00:00+02:00\", \"end\": \"2026-09-20T14:30:00+02:00\" },\n  \"Message\": \"Booked: Sunday, Sep 20 · 14:00-14:30\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"description": "Books the proposal's event and sends its reply. Call only once the user approved the exact proposal returned by the propose call above."
+					}
+				}
+			]
+		},
+		{
+			"name": "AI",
+			"item": [
+				{
+					"name": "Send raw prompt",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/ai/prompt", "host": ["{{baseUrl}}"], "path": ["v1", "ai", "prompt"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"prompt\": \"Reply with exactly one short sentence confirming you are working.\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"description": "Basic connectivity check against the local Ollama model."
+					}
+				},
+				{
+					"name": "Test email + prompt (built-in example)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/ai/test", "host": ["{{baseUrl}}"], "path": ["v1", "ai", "test"] },
+						"body": { "mode": "raw", "raw": "" },
+						"description": "No body needed: uses a built-in example email + instruction prompt (extract proposed meeting slots, draft a reply)."
+					}
+				},
+				{
+					"name": "Test email + prompt (custom override)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/v1/ai/test", "host": ["{{baseUrl}}"], "path": ["v1", "ai", "test"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"Hi, are you free tomorrow at 9am for a quick call?\",\n  \"prompt\": \"Summarize this email in one sentence.\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"description": "Both fields are optional and override the built-in example independently."
+					}
+				}
+			]
+		}
+	]
+}

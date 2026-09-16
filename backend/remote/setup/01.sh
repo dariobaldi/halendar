@@ -80,6 +80,7 @@ apt update
 apt install -y  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 docker volume create halendar-db
 docker volume create halendar-api
+docker volume create halendar-ollama
 docker volume create config-files
 ## Add user to Docker group
 sudo usermod -aG docker ${USER}

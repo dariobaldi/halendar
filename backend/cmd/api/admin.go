@@ -122,17 +122,6 @@ func (app *app) backgroudProcess() {
 			}
 		}
 	})
-
-	app.background(func() {
-		for {
-			now := time.Now()
-
-			// Calculate the next run time
-			nextRun := calculateNextRun(now, []RunTime{{Hour: 23, Minute: 00}, {Hour: 06, Minute: 00}})
-			duration := time.Until(nextRun)
-			time.Sleep(duration)
-		}
-	})
 }
 
 func (app *app) cleanClientIPs() {

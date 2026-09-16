@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dariobaldi/halendar_back/internal/mail"
 	"github.com/dariobaldi/halendar_back/internal/validator"
+	"halendar/mail"
 )
 
 // mailHealthHandler checks that the configured IMAP and SMTP connections work.

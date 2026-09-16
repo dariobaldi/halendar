@@ -14,11 +14,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type RunTime struct {
-	Hour   int
-	Minute int
-}
-
 func (app *app) rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if app.config.limiter.enabled {
@@ -170,25 +165,4 @@ func (app *app) requestsSlog(next http.Handler) http.Handler {
 			)
 		}
 	})
-}
-
-func calculateNextRun(now time.Time, runTimes []RunTime) time.Time {
-	// Find the next occurrence of these times
-	var nextRun time.Time
-	for _, rt := range runTimes {
-		candidate := time.Date(now.Year(), now.Month(), now.Day(), rt.Hour, rt.Minute, 0, 0, now.Location())
-		if candidate.After(now) {
-			if nextRun.IsZero() || candidate.Before(nextRun) {
-				nextRun = candidate
-			}
-		}
-	}
-
-	// If no run time is found today, pick the earliest for the next day
-	if nextRun.IsZero() {
-		nextDay := now.Add(24 * time.Hour)
-		nextRun = time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), runTimes[0].Hour, runTimes[0].Minute, 0, 0, now.Location())
-	}
-
-	return nextRun
 }
