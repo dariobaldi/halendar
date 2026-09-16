@@ -1,38 +1,38 @@
-# Paramètres (ex : make mails N=10)
-#   N       nombre de mails
-#   JOURS   jours d'agenda
-#   FICHIER fichier JSON (envoyer, ajouter)
-N       ?= 5
-JOURS   ?= 7
-FICHIER ?=
+# Parameters (e.g. make mails N=10)
+#   N     number of mails
+#   DAYS  days of calendar
+#   FILE  JSON file (send, add)
+N    ?= 5
+DAYS ?= 7
+FILE ?=
 
 BIN := bin/halendar
 
 .DEFAULT_GOAL := help
-.PHONY: help build mails envoyer agenda ajouter clean
+.PHONY: help build mails send calendar add clean
 
-help: ## Affiche cette aide
-	@printf "Usage : make <cible> [PARAM=valeur]\n\n"
+help: ## Show this help
+	@printf "Usage: make <target> [PARAM=value]\n\n"
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
-	@printf "\nExemples :\n"
+	@printf "\nExamples:\n"
 	@echo "  make mails N=10"
-	@echo "  make envoyer FICHIER=exemples/envoi.json"
-	@echo "  make ajouter FICHIER=exemples/evenement.json"
+	@echo "  make send FILE=examples/send.json"
+	@echo "  make add FILE=examples/event.json"
 
-build: ## Compile le programme
+build: ## Compile the program
 	@go build -o $(BIN) .
 
-mails: build ## Derniers mails            (N=5)
+mails: build ## Recent mails             (N=5)
 	@$(BIN) mails $(N)
 
-envoyer: build ## Envoie un mail             (FICHIER=exemples/envoi.json)
-	@$(BIN) envoyer $(or $(FICHIER),exemples/envoi.json)
+send: build ## Sends a mail              (FILE=examples/send.json)
+	@$(BIN) send $(or $(FILE),examples/send.json)
 
-agenda: build ## Emploi du temps            (JOURS=7)
-	@$(BIN) agenda $(JOURS)
+calendar: build ## Upcoming schedule     (DAYS=7)
+	@$(BIN) calendar $(DAYS)
 
-ajouter: build ## Ajoute des RDV             (FICHIER=exemples/evenement.json)
-	@$(BIN) ajouter $(or $(FICHIER),exemples/evenement.json)
+add: build ## Adds events               (FILE=examples/event.json)
+	@$(BIN) add $(or $(FILE),examples/event.json)
 
-clean: ## Supprime le binaire
+clean: ## Removes the binary
 	rm -rf bin

@@ -12,171 +12,174 @@ import (
 	"mime/quotedprintable"
 	"net"
 	"net/smtp"
+	"slices"
 	"strings"
 	"time"
 )
 
-// Envoyer envoie le mail et renvoie son Message-ID.
-func (b *Boite) Envoyer(ctx context.Context, e Envoi) (string, error) {
-	id, brut, err := b.construire(e)
+// Send sends the mail and returns its Message-ID.
+func (m *Mailbox) Send(ctx context.Context, o Outgoing) (string, error) {
+	id, raw, err := m.build(o)
 	if err != nil {
 		return "", err
 	}
-	c, err := b.smtpClient()
+	client, err := m.smtpClient()
 	if err != nil {
 		return "", err
 	}
-	defer c.Close()
-	if err := c.Mail(adresse(b.cfg.From)); err != nil {
-		return "", fmt.Errorf("SMTP expéditeur refusé : %w", err)
+	defer client.Close()
+
+	if err := client.Mail(parseAddress(m.cfg.From)); err != nil {
+		return "", fmt.Errorf("SMTP: sender refused: %w", err)
 	}
-	for _, dest := range append(append(append([]string{}, e.A...), e.Cc...), e.Cci...) {
-		if err := c.Rcpt(adresse(dest)); err != nil {
-			return "", fmt.Errorf("SMTP destinataire %q refusé : %w", dest, err)
+	recipients := append(append(append([]string{}, o.To...), o.Cc...), o.Bcc...)
+	for _, recipient := range recipients {
+		if err := client.Rcpt(parseAddress(recipient)); err != nil {
+			return "", fmt.Errorf("SMTP: recipient %q refused: %w", recipient, err)
 		}
 	}
-	w, err := c.Data()
+
+	w, err := client.Data()
 	if err != nil {
 		return "", err
 	}
-	if _, err := w.Write(brut); err != nil {
+	if _, err := w.Write(raw); err != nil {
 		return "", err
 	}
 	if err := w.Close(); err != nil {
-		return "", fmt.Errorf("SMTP envoi refusé : %w", err)
+		return "", fmt.Errorf("SMTP: send refused: %w", err)
 	}
-	c.Quit()
+	client.Quit()
 	return id, nil
 }
 
-// Repondre répond à un message reçu, dans le même fil de discussion.
-func (b *Boite) Repondre(ctx context.Context, original Message, texte string) (string, error) {
-	return b.Envoyer(ctx, ReponseA(original, texte))
+// Reply replies to a received message, in the same conversation thread.
+func (m *Mailbox) Reply(ctx context.Context, original Message, text string) (string, error) {
+	return m.Send(ctx, ReplyTo(original, text))
 }
 
-// ReponseA prépare (sans l'envoyer) la réponse à un message : destinataire, "Re:" et fil.
-// Utile pour DeposerBrouillon ou pour modifier avant envoi.
-func ReponseA(original Message, texte string) Envoi {
-	sujet := original.Sujet
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(sujet)), "re:") {
-		sujet = "Re: " + sujet
+// ReplyTo prepares (without sending) a reply to a message: recipient, "Re:", and thread headers.
+// Useful for SaveDraft, or to edit the reply before it is sent.
+func ReplyTo(original Message, text string) Outgoing {
+	subject := original.Subject
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(subject)), "re:") {
+		subject = "Re: " + subject
 	}
-	return Envoi{A: []string{original.De}, Sujet: sujet, Texte: texte, EnReponseA: original.ID, References: original.References}
+	return Outgoing{To: []string{original.From}, Subject: subject, Text: text, InReplyTo: original.ID, References: original.References}
 }
 
-func (b *Boite) smtpClient() (*smtp.Client, error) {
-	if b.cfg.SMTPHost == "" {
-		return nil, errors.New("SMTP non configuré (MAIL_SMTP_HOST)")
+func (m *Mailbox) smtpClient() (*smtp.Client, error) {
+	if m.cfg.SMTPHost == "" {
+		return nil, errors.New("SMTP not configured (MAIL_SMTP_HOST)")
 	}
-	addr := fmt.Sprintf("%s:%d", b.cfg.SMTPHost, b.cfg.SMTPPort)
-	tlsCfg := &tls.Config{ServerName: b.cfg.SMTPHost}
+	addr := fmt.Sprintf("%s:%d", m.cfg.SMTPHost, m.cfg.SMTPPort)
+	tlsCfg := &tls.Config{ServerName: m.cfg.SMTPHost}
+
 	var conn net.Conn
 	var err error
-	if b.cfg.SMTPPort == 465 {
+	if m.cfg.SMTPPort == 465 {
 		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 15 * time.Second}, "tcp", addr, tlsCfg)
 	} else {
 		conn, err = net.DialTimeout("tcp", addr, 15*time.Second)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("SMTP : connexion impossible à %s : %w", addr, err)
+		return nil, fmt.Errorf("SMTP: could not connect to %s: %w", addr, err)
 	}
-	c, err := smtp.NewClient(conn, b.cfg.SMTPHost)
+
+	client, err := smtp.NewClient(conn, m.cfg.SMTPHost)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
-	if ok, _ := c.Extension("STARTTLS"); ok && b.cfg.SMTPPort != 465 {
-		if err := c.StartTLS(tlsCfg); err != nil {
-			c.Close()
-			return nil, fmt.Errorf("SMTP STARTTLS : %w", err)
+	if ok, _ := client.Extension("STARTTLS"); ok && m.cfg.SMTPPort != 465 {
+		if err := client.StartTLS(tlsCfg); err != nil {
+			client.Close()
+			return nil, fmt.Errorf("SMTP STARTTLS: %w", err)
 		}
 	}
-	if ok, _ := c.Extension("AUTH"); ok {
-		if err := c.Auth(smtp.PlainAuth("", b.cfg.User, b.cfg.Pass, b.cfg.SMTPHost)); err != nil {
-			c.Close()
-			return nil, fmt.Errorf("SMTP : authentification refusée (mot de passe d'application ?) : %w", err)
+	if ok, _ := client.Extension("AUTH"); ok {
+		auth := smtp.PlainAuth("", m.cfg.User, m.cfg.Pass, m.cfg.SMTPHost)
+		if err := client.Auth(auth); err != nil {
+			client.Close()
+			return nil, fmt.Errorf("SMTP: authentication refused (is it an app password?): %w", err)
 		}
 	}
-	return c, nil
+	return client, nil
 }
 
-// construire produit le mail brut (RFC 5322) : texte seul, ou texte + HTML.
-func (b *Boite) construire(e Envoi) (string, []byte, error) {
-	if len(e.A) == 0 || strings.TrimSpace(e.A[0]) == "" {
-		return "", nil, errors.New(`champ "a" (destinataire) manquant`)
+// build produces the raw mail (RFC 5322): text only, or text + HTML.
+func (m *Mailbox) build(o Outgoing) (string, []byte, error) {
+	if len(o.To) == 0 || strings.TrimSpace(o.To[0]) == "" {
+		return "", nil, errors.New(`"to" field missing`)
 	}
-	if strings.TrimSpace(e.Texte) == "" && strings.TrimSpace(e.HTML) == "" {
-		return "", nil, errors.New(`champ "texte" manquant`)
+	if strings.TrimSpace(o.Text) == "" && strings.TrimSpace(o.HTML) == "" {
+		return "", nil, errors.New(`"text" field missing`)
 	}
-	domaine := "halendar.local"
-	if i := strings.LastIndex(b.cfg.From, "@"); i >= 0 {
-		domaine = strings.Trim(b.cfg.From[i+1:], "> ")
+
+	domain := "halendar.local"
+	if i := strings.LastIndex(m.cfg.From, "@"); i >= 0 {
+		domain = strings.Trim(m.cfg.From[i+1:], "> ")
 	}
-	rnd := make([]byte, 8)
-	rand.Read(rnd)
-	id := fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), hex.EncodeToString(rnd), domaine)
+	random := make([]byte, 8)
+	rand.Read(random)
+	id := fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), hex.EncodeToString(random), domain)
 
 	var buf bytes.Buffer
-	h := func(k, v string) {
-		if v != "" {
-			fmt.Fprintf(&buf, "%s: %s\r\n", k, v)
+	header := func(key, value string) {
+		if value != "" {
+			fmt.Fprintf(&buf, "%s: %s\r\n", key, value)
 		}
 	}
-	h("From", b.cfg.From)
-	h("To", strings.Join(e.A, ", "))
-	h("Cc", strings.Join(e.Cc, ", "))
-	h("Subject", mime.QEncoding.Encode("utf-8", e.Sujet))
-	h("Date", time.Now().Format(time.RFC1123Z))
-	h("Message-ID", id)
-	h("In-Reply-To", Crochets(e.EnReponseA))
-	var refs []string
-	for _, r := range strings.Fields(e.References + " " + e.EnReponseA) {
-		if r = Crochets(r); !contient(refs, r) {
-			refs = append(refs, r)
-		}
-	}
-	h("References", strings.Join(refs, " "))
-	h("MIME-Version", "1.0")
+	header("From", m.cfg.From)
+	header("To", strings.Join(o.To, ", "))
+	header("Cc", strings.Join(o.Cc, ", "))
+	header("Subject", mime.QEncoding.Encode("utf-8", o.Subject))
+	header("Date", time.Now().Format(time.RFC1123Z))
+	header("Message-ID", id)
+	header("In-Reply-To", Bracket(o.InReplyTo))
 
-	partie := func(contentType, corps string) {
+	var references []string
+	for _, ref := range strings.Fields(o.References + " " + o.InReplyTo) {
+		ref = Bracket(ref)
+		if !slices.Contains(references, ref) {
+			references = append(references, ref)
+		}
+	}
+	header("References", strings.Join(references, " "))
+	header("MIME-Version", "1.0")
+
+	writePart := func(contentType, body string) {
 		fmt.Fprintf(&buf, "Content-Type: %s; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n", contentType)
+		body = strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
 		qp := quotedprintable.NewWriter(&buf)
-		qp.Write([]byte(strings.ReplaceAll(strings.ReplaceAll(corps, "\r\n", "\n"), "\n", "\r\n")))
+		qp.Write([]byte(body))
 		qp.Close()
 		buf.WriteString("\r\n")
 	}
-	if e.HTML == "" {
-		partie("text/plain", e.Texte)
+
+	if o.HTML == "" {
+		writePart("text/plain", o.Text)
 	} else {
-		texte := e.Texte
-		if texte == "" {
-			texte = HTMLVersTexte(e.HTML)
+		text := o.Text
+		if text == "" {
+			text = HTMLToText(o.HTML)
 		}
-		frontiere := "halendar-" + hex.EncodeToString(rnd)
-		fmt.Fprintf(&buf, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", frontiere)
-		fmt.Fprintf(&buf, "--%s\r\n", frontiere)
-		partie("text/plain", texte)
-		fmt.Fprintf(&buf, "--%s\r\n", frontiere)
-		partie("text/html", e.HTML)
-		fmt.Fprintf(&buf, "--%s--\r\n", frontiere)
+		boundary := "halendar-" + hex.EncodeToString(random)
+		fmt.Fprintf(&buf, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", boundary)
+		fmt.Fprintf(&buf, "--%s\r\n", boundary)
+		writePart("text/plain", text)
+		fmt.Fprintf(&buf, "--%s\r\n", boundary)
+		writePart("text/html", o.HTML)
+		fmt.Fprintf(&buf, "--%s--\r\n", boundary)
 	}
 	return id, buf.Bytes(), nil
 }
 
-func adresse(s string) string {
+func parseAddress(s string) string {
 	if i := strings.Index(s, "<"); i >= 0 {
 		if j := strings.Index(s[i:], ">"); j > 0 {
 			return s[i+1 : i+j]
 		}
 	}
 	return strings.TrimSpace(s)
-}
-
-func contient(l []string, x string) bool {
-	for _, v := range l {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }

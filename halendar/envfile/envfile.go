@@ -1,4 +1,4 @@
-// Package envfile charge un fichier .env (CLE=valeur) dans les variables d'environnement.
+// Package envfile loads a .env file (KEY=value) into the process environment.
 package envfile
 
 import (
@@ -9,10 +9,10 @@ import (
 	"strings"
 )
 
-// Charger lit le fichier. Les variables déjà définies (terminal, Docker) gardent
-// la priorité. Un fichier absent n'est pas une erreur.
-func Charger(chemin string) error {
-	f, err := os.Open(chemin)
+// Load reads the file at path. Variables that are already set (shell, Docker)
+// keep their existing value. A missing file is not an error.
+func Load(path string) error {
+	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -21,64 +21,78 @@ func Charger(chemin string) error {
 	}
 	defer f.Close()
 
-	sc := bufio.NewScanner(f)
-	for n := 1; sc.Scan(); n++ {
-		ligne := strings.TrimSpace(sc.Text())
-		if ligne == "" || strings.HasPrefix(ligne, "#") {
+	scanner := bufio.NewScanner(f)
+	lineNumber := 0
+	for scanner.Scan() {
+		lineNumber++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		ligne = strings.TrimPrefix(ligne, "export ")
-		cle, val, ok := strings.Cut(ligne, "=")
+		line = strings.TrimPrefix(line, "export ")
+
+		key, value, ok := strings.Cut(line, "=")
 		if !ok {
-			return fmt.Errorf("%s ligne %d : '=' manquant", chemin, n)
+			return fmt.Errorf("%s line %d: missing '='", path, lineNumber)
 		}
-		cle, val = strings.TrimSpace(cle), strings.TrimSpace(val)
-		if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
-			val = val[1 : len(val)-1]
-		} else if i := strings.Index(val, " #"); i >= 0 {
-			val = strings.TrimSpace(val[:i])
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+
+		if isQuoted(value) {
+			value = value[1 : len(value)-1]
+		} else if i := strings.Index(value, " #"); i >= 0 {
+			value = strings.TrimSpace(value[:i])
 		}
-		if _, existe := os.LookupEnv(cle); !existe {
-			os.Setenv(cle, val)
+
+		if _, alreadySet := os.LookupEnv(key); !alreadySet {
+			os.Setenv(key, value)
 		}
 	}
-	return sc.Err()
+	return scanner.Err()
 }
 
-// Texte renvoie la variable ou la valeur par défaut.
-func Texte(cle, defaut string) string {
-	if v := strings.TrimSpace(os.Getenv(cle)); v != "" {
-		return v
-	}
-	return defaut
-}
-
-// Entier renvoie la variable convertie en entier, ou la valeur par défaut.
-func Entier(cle string, defaut int) int {
-	if v, err := strconv.Atoi(Texte(cle, "")); err == nil {
-		return v
-	}
-	return defaut
-}
-
-// Booleen accepte true/false, 1/0, oui/non.
-func Booleen(cle string, defaut bool) bool {
-	switch strings.ToLower(Texte(cle, "")) {
-	case "true", "1", "oui", "yes":
-		return true
-	case "false", "0", "non", "no":
+func isQuoted(s string) bool {
+	if len(s) < 2 {
 		return false
 	}
-	return defaut
+	quote := s[0]
+	return (quote == '"' || quote == '\'') && s[len(s)-1] == quote
 }
 
-// Manquantes liste les variables vides parmi celles demandées.
-func Manquantes(cles ...string) []string {
-	var m []string
-	for _, k := range cles {
-		if Texte(k, "") == "" {
-			m = append(m, k)
+// String returns the value of key, or fallback if it is unset or empty.
+func String(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// Int returns the value of key parsed as an integer, or fallback.
+func Int(key string, fallback int) int {
+	if v, err := strconv.Atoi(String(key, "")); err == nil {
+		return v
+	}
+	return fallback
+}
+
+// Bool accepts true/false, 1/0, yes/no.
+func Bool(key string, fallback bool) bool {
+	switch strings.ToLower(String(key, "")) {
+	case "true", "1", "yes":
+		return true
+	case "false", "0", "no":
+		return false
+	}
+	return fallback
+}
+
+// Missing returns which of the given keys are unset or empty.
+func Missing(keys ...string) []string {
+	var missing []string
+	for _, k := range keys {
+		if String(k, "") == "" {
+			missing = append(missing, k)
 		}
 	}
-	return m
+	return missing
 }

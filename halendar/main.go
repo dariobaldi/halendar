@@ -1,16 +1,16 @@
-// Démo en ligne de commande des modules mail et agenda.
-// Identifiants dans le fichier .env (voir .env.example).
+// Command-line demo of the mail and calendar packages.
+// Credentials go in the .env file (see .env.example).
 //
-//	go run . sante                   teste la connexion mail et agenda
-//	go run . mails [n]               n derniers mails
-//	go run . nonlus                  mails non lus
-//	go run . lire <uid>              un mail complet
-//	go run . envoyer envoi.json      envoie un mail
-//	go run . repondre <uid> "texte"  répond dans le même fil
-//	go run . brouillon envoi.json    dépose le mail dans les Brouillons
-//	go run . agenda [jours]          emploi du temps
-//	go run . ajouter evenement.json  ajoute (ou met à jour) un ou plusieurs RDV
-//	go run . supprimer <uid>         supprime un RDV
+//	go run . health                  tests the mail and calendar connection
+//	go run . mails [n]                n most recent mails
+//	go run . unread                   unread mails
+//	go run . read <uid>               one full mail
+//	go run . send send.json           sends a mail
+//	go run . reply <uid> "text"       replies in the same thread
+//	go run . draft send.json          saves the mail to Drafts
+//	go run . calendar [days]          upcoming schedule
+//	go run . add event.json           adds (or updates) one or more events
+//	go run . delete <uid>             deletes an event
 package main
 
 import (
@@ -25,202 +25,232 @@ import (
 	"strings"
 	"time"
 
-	"halendar/agenda"
+	"halendar/calendar"
 	"halendar/envfile"
 	"halendar/mail"
 )
 
 func main() {
-	if err := envfile.Charger(".env"); err != nil {
+	if err := envfile.Load(".env"); err != nil {
 		fmt.Fprintln(os.Stderr, "✗", err)
 		os.Exit(1)
 	}
-	boite := mail.Nouveau(mail.ConfigDepuisEnv())
-	ag := agenda.Nouveau(agenda.ConfigDepuisEnv())
+	mailbox := mail.New(mail.ConfigFromEnv())
+	cal := calendar.New(calendar.ConfigFromEnv())
 
 	if len(os.Args) < 2 {
-		fmt.Println(aide)
+		fmt.Println(helpText)
 		return
 	}
-	if err := executer(context.Background(), os.Args[1], os.Args[2:], boite, ag); err != nil {
+	if err := run(context.Background(), os.Args[1], os.Args[2:], mailbox, cal); err != nil {
 		fmt.Fprintln(os.Stderr, "✗", err)
 		os.Exit(1)
 	}
 }
 
-func executer(ctx context.Context, cmd string, args []string, boite *mail.Boite, ag *agenda.Agenda) error {
+func run(ctx context.Context, cmd string, args []string, mailbox *mail.Mailbox, cal *calendar.Client) error {
 	switch cmd {
-	case "sante":
-		ok := true
-		if err := boite.Tester(ctx); err != nil {
-			fmt.Println("✗ mail  ", err)
-			ok = false
-		} else {
-			n, _ := boite.Compter(ctx)
-			fmt.Printf("✓ mail   %s (%d messages) · envoi via %s:%d\n", boite.Config().User, n, boite.Config().SMTPHost, boite.Config().SMTPPort)
-		}
-		if err := ag.Tester(ctx); err != nil {
-			fmt.Println("✗ agenda", err)
-			ok = false
-		} else {
-			noms, _ := ag.Agendas(ctx)
-			fmt.Println("✓ agenda", strings.Join(noms, ", "))
-		}
-		if !ok {
-			return errors.New("au moins un module ne répond pas")
-		}
-		return nil
-
+	case "health":
+		return runHealth(ctx, mailbox, cal)
 	case "mails":
-		msgs, err := boite.Derniers(ctx, entier(args, 5))
-		if err != nil {
-			return err
-		}
-		afficherMails(msgs)
-		return nil
-
-	case "nonlus":
-		msgs, err := boite.Rechercher(ctx, mail.Recherche{NonLus: true, Max: 20})
-		if err != nil {
-			return err
-		}
-		afficherMails(msgs)
-		return nil
-
-	case "lire":
-		uid, err := uidArg(args)
-		if err != nil {
-			return err
-		}
-		m, err := boite.Lire(ctx, uid)
-		if err != nil {
-			return err
-		}
-		return afficherJSON(m)
-
-	case "envoyer", "brouillon":
-		var e mail.Envoi
-		if err := lireJSON(args, &e); err != nil {
-			return err
-		}
-		if cmd == "brouillon" {
-			dossier, err := boite.DeposerBrouillon(ctx, e)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("✓ brouillon déposé dans %q\n", dossier)
-			return nil
-		}
-		id, err := boite.Envoyer(ctx, e)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("✓ mail envoyé à %s (%s)\n", strings.Join(e.A, ", "), id)
-		return nil
-
-	case "repondre":
-		uid, err := uidArg(args)
-		if err != nil || len(args) < 2 {
-			return errors.New(`usage : go run . repondre <uid> "texte"`)
-		}
-		m, err := boite.Lire(ctx, uid)
-		if err != nil {
-			return err
-		}
-		if _, err := boite.Repondre(ctx, *m, args[1]); err != nil {
-			return err
-		}
-		fmt.Printf("✓ réponse envoyée à %s (« Re: %s »)\n", m.De, m.Sujet)
-		return nil
-
-	case "agenda":
-		debut := time.Now()
-		fin := debut.AddDate(0, 0, entier(args, 7))
-		evs, err := ag.Evenements(ctx, debut, fin)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("%d événement(s) du %s au %s\n", len(evs), debut.Format("02/01"), fin.Format("02/01"))
-		jour := ""
-		for _, e := range evs {
-			if j := e.Debut.Format("Mon 02/01"); j != jour {
-				jour = j
-				fmt.Println("\n" + jour)
-			}
-			horaire := e.Debut.Format("15:04") + "–" + e.Fin.Format("15:04")
-			if e.JourneeEntiere {
-				horaire = "journée    "
-			}
-			fmt.Printf("  %s  %s  [%s · %s]  uid=%s\n", horaire, e.Titre, e.Agenda, e.Statut, e.UID)
-		}
-		return nil
-
-	case "ajouter":
-		raw, err := lireBrut(args)
-		if err != nil {
-			return err
-		}
-		var evs []agenda.Evenement
-		if t := bytes.TrimSpace(raw); len(t) > 0 && t[0] == '[' {
-			err = json.Unmarshal(t, &evs)
-		} else {
-			var e agenda.Evenement
-			err = json.Unmarshal(t, &e)
-			evs = []agenda.Evenement{e}
-		}
-		if err != nil {
-			return fmt.Errorf("JSON invalide : %w", err)
-		}
-		reussis := 0
-		for i, e := range evs {
-			r, err := ag.Ajouter(ctx, e)
-			if err != nil {
-				fmt.Printf("✗ événement %d (%q) : %v\n", i+1, e.Titre, err)
-				continue
-			}
-			reussis++
-			fmt.Printf("✓ « %s » → %s, le %s de %s à %s (%s)\n", r.Titre, r.Agenda,
-				r.Debut.Format("02/01/2006"), r.Debut.Format("15:04"), r.Fin.Format("15:04"), r.Statut)
-		}
-		if reussis < len(evs) {
-			return fmt.Errorf("%d/%d événement(s) ajouté(s)", reussis, len(evs))
-		}
-		return nil
-
-	case "supprimer":
-		if len(args) == 0 {
-			return errors.New("usage : go run . supprimer <uid> [agenda]")
-		}
-		nom := ""
-		if len(args) > 1 {
-			nom = args[1]
-		}
-		if err := ag.Supprimer(ctx, args[0], nom); err != nil {
-			return err
-		}
-		fmt.Println("✓ supprimé")
-		return nil
+		return runMails(ctx, mailbox, args)
+	case "unread":
+		return runUnread(ctx, mailbox)
+	case "read":
+		return runRead(ctx, mailbox, args)
+	case "send", "draft":
+		return runSendOrDraft(ctx, mailbox, cmd, args)
+	case "reply":
+		return runReply(ctx, mailbox, args)
+	case "calendar":
+		return runCalendar(ctx, cal, args)
+	case "add":
+		return runAdd(ctx, cal, args)
+	case "delete":
+		return runDelete(ctx, cal, args)
 	}
-	return fmt.Errorf("commande inconnue %q\n\n%s", cmd, aide)
+	return fmt.Errorf("unknown command %q\n\n%s", cmd, helpText)
 }
 
-func afficherMails(msgs []mail.Message) {
-	if len(msgs) == 0 {
-		fmt.Println("aucun mail")
+func runHealth(ctx context.Context, mailbox *mail.Mailbox, cal *calendar.Client) error {
+	ok := true
+	if err := mailbox.Test(ctx); err != nil {
+		fmt.Println("✗ mail    ", err)
+		ok = false
+	} else {
+		n, _ := mailbox.Count(ctx)
+		fmt.Printf("✓ mail     %s (%d messages) · sends via %s:%d\n", mailbox.Config().User, n, mailbox.Config().SMTPHost, mailbox.Config().SMTPPort)
 	}
-	for _, m := range msgs {
-		lu := "●"
-		if m.Lu {
-			lu = " "
+	if err := cal.Test(ctx); err != nil {
+		fmt.Println("✗ calendar", err)
+		ok = false
+	} else {
+		names, _ := cal.Calendars(ctx)
+		fmt.Println("✓ calendar", strings.Join(names, ", "))
+	}
+	if !ok {
+		return errors.New("at least one module is not responding")
+	}
+	return nil
+}
+
+func runMails(ctx context.Context, mailbox *mail.Mailbox, args []string) error {
+	msgs, err := mailbox.Recent(ctx, intArg(args, 5))
+	if err != nil {
+		return err
+	}
+	printMessages(msgs)
+	return nil
+}
+
+func runUnread(ctx context.Context, mailbox *mail.Mailbox) error {
+	msgs, err := mailbox.Search(ctx, mail.SearchQuery{Unread: true, Max: 20})
+	if err != nil {
+		return err
+	}
+	printMessages(msgs)
+	return nil
+}
+
+func runRead(ctx context.Context, mailbox *mail.Mailbox, args []string) error {
+	uid, err := uidArg(args)
+	if err != nil {
+		return err
+	}
+	msg, err := mailbox.Read(ctx, uid)
+	if err != nil {
+		return err
+	}
+	return printJSON(msg)
+}
+
+func runSendOrDraft(ctx context.Context, mailbox *mail.Mailbox, cmd string, args []string) error {
+	var outgoing mail.Outgoing
+	if err := readJSON(args, &outgoing); err != nil {
+		return err
+	}
+	if cmd == "draft" {
+		folder, err := mailbox.SaveDraft(ctx, outgoing)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("✓ draft saved to %q\n", folder)
+		return nil
+	}
+	id, err := mailbox.Send(ctx, outgoing)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("✓ mail sent to %s (%s)\n", strings.Join(outgoing.To, ", "), id)
+	return nil
+}
+
+func runReply(ctx context.Context, mailbox *mail.Mailbox, args []string) error {
+	uid, err := uidArg(args)
+	if err != nil || len(args) < 2 {
+		return errors.New(`usage: go run . reply <uid> "text"`)
+	}
+	msg, err := mailbox.Read(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if _, err := mailbox.Reply(ctx, *msg, args[1]); err != nil {
+		return err
+	}
+	fmt.Printf("✓ reply sent to %s (\"Re: %s\")\n", msg.From, msg.Subject)
+	return nil
+}
+
+func runCalendar(ctx context.Context, cal *calendar.Client, args []string) error {
+	start := time.Now()
+	end := start.AddDate(0, 0, intArg(args, 7))
+	events, err := cal.Events(ctx, start, end)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%d event(s) from %s to %s\n", len(events), start.Format("Jan 2"), end.Format("Jan 2"))
+	day := ""
+	for _, e := range events {
+		if d := e.Start.Format("Mon Jan 2"); d != day {
+			day = d
+			fmt.Println("\n" + day)
+		}
+		hours := e.Start.Format("15:04") + "-" + e.End.Format("15:04")
+		if e.AllDay {
+			hours = "all day   "
+		}
+		fmt.Printf("  %s  %s  [%s · %s]  uid=%s\n", hours, e.Title, e.Calendar, e.Status, e.UID)
+	}
+	return nil
+}
+
+func runAdd(ctx context.Context, cal *calendar.Client, args []string) error {
+	raw, err := readInput(args)
+	if err != nil {
+		return err
+	}
+	var events []calendar.Event
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] == '[' {
+		err = json.Unmarshal(trimmed, &events)
+	} else {
+		var e calendar.Event
+		err = json.Unmarshal(trimmed, &e)
+		events = []calendar.Event{e}
+	}
+	if err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	succeeded := 0
+	for i, e := range events {
+		added, err := cal.Add(ctx, e)
+		if err != nil {
+			fmt.Printf("✗ event %d (%q): %v\n", i+1, e.Title, err)
+			continue
+		}
+		succeeded++
+		fmt.Printf("✓ %q → %s, on %s from %s to %s (%s)\n", added.Title, added.Calendar,
+			added.Start.Format("Jan 2, 2006"), added.Start.Format("15:04"), added.End.Format("15:04"), added.Status)
+	}
+	if succeeded < len(events) {
+		return fmt.Errorf("%d/%d event(s) added", succeeded, len(events))
+	}
+	return nil
+}
+
+func runDelete(ctx context.Context, cal *calendar.Client, args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: go run . delete <uid> [calendar]")
+	}
+	calendarName := ""
+	if len(args) > 1 {
+		calendarName = args[1]
+	}
+	if err := cal.Delete(ctx, args[0], calendarName); err != nil {
+		return err
+	}
+	fmt.Println("✓ deleted")
+	return nil
+}
+
+func printMessages(msgs []mail.Message) {
+	if len(msgs) == 0 {
+		fmt.Println("no mails")
+	}
+	for _, msg := range msgs {
+		unread := "●"
+		if msg.Read {
+			unread = " "
 		}
 		fmt.Println(strings.Repeat("─", 60))
-		fmt.Printf("%s UID %d · %s\n  De    %s %s\n  Sujet %s\n\n%s\n", lu, m.UID, m.Date.Format("02/01 15:04"), m.DeNom, m.De, m.Sujet, tronquer(m.Texte, 400))
+		fmt.Printf("%s UID %d · %s\n  From    %s %s\n  Subject %s\n\n%s\n",
+			unread, msg.UID, msg.Date.Format("Jan 2 15:04"), msg.FromName, msg.From, msg.Subject, truncate(msg.Text, 400))
 	}
 }
 
-func lireBrut(args []string) ([]byte, error) {
+func readInput(args []string) ([]byte, error) {
 	if len(args) == 0 {
-		return nil, errors.New("fichier JSON manquant (ou « - » pour l'entrée standard)")
+		return nil, errors.New("missing JSON file (or \"-\" for standard input)")
 	}
 	if args[0] == "-" {
 		return io.ReadAll(os.Stdin)
@@ -228,18 +258,18 @@ func lireBrut(args []string) ([]byte, error) {
 	return os.ReadFile(args[0])
 }
 
-func lireJSON(args []string, v any) error {
-	raw, err := lireBrut(args)
+func readJSON(args []string, v any) error {
+	raw, err := readInput(args)
 	if err != nil {
 		return err
 	}
 	if err := json.Unmarshal(raw, v); err != nil {
-		return fmt.Errorf("JSON invalide : %w", err)
+		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
 }
 
-func afficherJSON(v any) error {
+func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
@@ -248,36 +278,36 @@ func afficherJSON(v any) error {
 
 func uidArg(args []string) (uint32, error) {
 	if len(args) == 0 {
-		return 0, errors.New("UID manquant")
+		return 0, errors.New("missing UID")
 	}
 	n, err := strconv.ParseUint(args[0], 10, 32)
 	return uint32(n), err
 }
 
-func entier(args []string, def int) int {
+func intArg(args []string, fallback int) int {
 	if len(args) > 0 {
 		if n, err := strconv.Atoi(args[0]); err == nil && n > 0 {
 			return n
 		}
 	}
-	return def
+	return fallback
 }
 
-func tronquer(s string, n int) string {
+func truncate(s string, n int) string {
 	if r := []rune(s); len(r) > n {
 		return string(r[:n]) + "…"
 	}
 	return s
 }
 
-const aide = `Commandes :
-  go run . sante                   teste la connexion mail et agenda
-  go run . mails [n]               n derniers mails
-  go run . nonlus                  mails non lus
-  go run . lire <uid>              un mail complet (JSON)
-  go run . envoyer envoi.json      envoie un mail
-  go run . repondre <uid> "texte"  répond dans le même fil
-  go run . brouillon envoi.json    dépose le mail dans les Brouillons
-  go run . agenda [jours]          emploi du temps
-  go run . ajouter evenement.json  ajoute (ou met à jour) un ou plusieurs RDV
-  go run . supprimer <uid>         supprime un RDV`
+const helpText = `Commands:
+  go run . health                  tests the mail and calendar connection
+  go run . mails [n]                n most recent mails
+  go run . unread                   unread mails
+  go run . read <uid>               one full mail (JSON)
+  go run . send send.json           sends a mail
+  go run . reply <uid> "text"       replies in the same thread
+  go run . draft send.json          saves the mail to Drafts
+  go run . calendar [days]          upcoming schedule
+  go run . add event.json           adds (or updates) one or more events
+  go run . delete <uid>             deletes an event`

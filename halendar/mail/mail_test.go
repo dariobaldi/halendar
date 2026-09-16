@@ -9,122 +9,123 @@ import (
 	"halendar/testutil"
 )
 
-func boite(t *testing.T) (*mail.Boite, *testutil.FauxIMAP, *testutil.FauxSMTP) {
-	im := testutil.NouveauFauxIMAP(t)
-	sm := testutil.NouveauFauxSMTP(t)
-	b := mail.Nouveau(mail.Config{
-		IMAPHost: im.Addr, IMAPSansTLS: true,
+func newMailbox(t *testing.T) (*mail.Mailbox, *testutil.FakeIMAP, *testutil.FakeSMTP) {
+	im := testutil.NewFakeIMAP(t)
+	sm := testutil.NewFakeSMTP(t)
+	mb := mail.New(mail.Config{
+		IMAPHost: im.Addr, IMAPInsecure: true,
 		SMTPHost: sm.Host, SMTPPort: sm.Port,
 		User: im.User, Pass: im.Pass,
 	})
-	return b, im, sm
+	return mb, im, sm
 }
 
-func TestLireRechercherMarquerDeplacer(t *testing.T) {
+func TestReadSearchMarkMove(t *testing.T) {
 	ctx := context.Background()
-	b, im, _ := boite(t)
-	if err := b.Tester(ctx); err != nil {
+	mb, im, _ := newMailbox(t)
+	if err := mb.Test(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	// Nouveaux : premier appel = point de départ, rien n'est renvoyé
-	im.Deposer(t, "<ancien@x>", "vieux@exemple.fr", "Ancien", "historique")
-	msgs, dernier, err := b.Nouveaux(ctx, 0)
-	if err != nil || len(msgs) != 0 || dernier != 1 {
-		t.Fatalf("point de départ : %d msgs, dernier=%d, err=%v", len(msgs), dernier, err)
+	// NewSince: the first call is just a starting point, nothing is returned yet
+	im.Deliver(t, "<old@x>", "old@example.com", "Old", "history")
+	msgs, last, err := mb.NewSince(ctx, 0)
+	if err != nil || len(msgs) != 0 || last != 1 {
+		t.Fatalf("starting point: %d msgs, last=%d, err=%v", len(msgs), last, err)
 	}
-	im.Deposer(t, "<rdv@x>", "Claire Martin <claire@exemple.fr>", "Point projet", "Dispo jeudi 14h ?")
-	im.Deposer(t, "<news@x>", "news@exemple.fr", "Newsletter", "Promo")
-	msgs, dernier, err = b.Nouveaux(ctx, dernier)
-	if err != nil || len(msgs) != 2 || dernier != 3 {
-		t.Fatalf("nouveaux : %d msgs, dernier=%d, err=%v", len(msgs), dernier, err)
+	im.Deliver(t, "<meeting@x>", "Claire Martin <claire@example.com>", "Project sync", "Free Thursday 2pm?")
+	im.Deliver(t, "<news@x>", "news@example.com", "Newsletter", "Promo")
+	msgs, last, err = mb.NewSince(ctx, last)
+	if err != nil || len(msgs) != 2 || last != 3 {
+		t.Fatalf("new messages: %d msgs, last=%d, err=%v", len(msgs), last, err)
 	}
-	if msgs, _, _ := b.Nouveaux(ctx, dernier); len(msgs) != 0 {
-		t.Fatalf("aucun nouveau attendu, obtenu %d", len(msgs))
-	}
-
-	// Derniers : du plus récent au plus ancien, avec Message-ID entre crochets
-	derniers, err := b.Derniers(ctx, 2)
-	if err != nil || len(derniers) != 2 || derniers[0].Sujet != "Newsletter" || derniers[1].ID != "<rdv@x>" {
-		t.Fatalf("derniers : %+v %v", derniers, err)
-	}
-	claire := derniers[1]
-	if claire.De != "claire@exemple.fr" || claire.DeNom != "Claire Martin" || claire.Lu {
-		t.Fatalf("message mal lu : %+v", claire)
+	if msgs, _, _ := mb.NewSince(ctx, last); len(msgs) != 0 {
+		t.Fatalf("expected no new messages, got %d", len(msgs))
 	}
 
-	// Rechercher + MarquerLu
-	res, err := b.Rechercher(ctx, mail.Recherche{Sujet: "projet"})
+	// Recent: newest first, with the Message-ID in angle brackets
+	recent, err := mb.Recent(ctx, 2)
+	if err != nil || len(recent) != 2 || recent[0].Subject != "Newsletter" || recent[1].ID != "<meeting@x>" {
+		t.Fatalf("recent: %+v %v", recent, err)
+	}
+	claire := recent[1]
+	if claire.From != "claire@example.com" || claire.FromName != "Claire Martin" || claire.Read {
+		t.Fatalf("message parsed incorrectly: %+v", claire)
+	}
+
+	// Search + MarkRead
+	res, err := mb.Search(ctx, mail.SearchQuery{Subject: "sync"})
 	if err != nil || len(res) != 1 || res[0].UID != claire.UID {
-		t.Fatalf("recherche par sujet : %+v %v", res, err)
+		t.Fatalf("search by subject: %+v %v", res, err)
 	}
-	if err := b.MarquerLu(ctx, true, claire.UID); err != nil {
+	if err := mb.MarkRead(ctx, true, claire.UID); err != nil {
 		t.Fatal(err)
 	}
-	nonLus, _ := b.Rechercher(ctx, mail.Recherche{NonLus: true})
-	if len(nonLus) != 2 {
-		t.Fatalf("attendu 2 non lus, obtenu %d", len(nonLus))
+	unread, _ := mb.Search(ctx, mail.SearchQuery{Unread: true})
+	if len(unread) != 2 {
+		t.Fatalf("expected 2 unread, got %d", len(unread))
 	}
-	if m, _ := b.Lire(ctx, claire.UID); !m.Lu {
-		t.Fatal("le message devrait être lu")
+	if msg, _ := mb.Read(ctx, claire.UID); !msg.Read {
+		t.Fatal("the message should be marked read")
 	}
 
-	// Dossiers + Deplacer
-	dossiers, _ := b.Dossiers(ctx)
-	if !strings.Contains(strings.Join(dossiers, ","), "Archives") {
-		t.Fatalf("dossiers : %v", dossiers)
+	// Folders + Move
+	folders, _ := mb.Folders(ctx)
+	if !strings.Contains(strings.Join(folders, ","), "Archives") {
+		t.Fatalf("folders: %v", folders)
 	}
-	if err := b.Deplacer(ctx, "Archives", claire.UID); err != nil {
+	if err := mb.Move(ctx, "Archives", claire.UID); err != nil {
 		t.Fatal(err)
 	}
-	if im.Compter("INBOX") != 2 || im.Compter("Archives") != 1 {
-		t.Fatalf("déplacement : INBOX=%d Archives=%d", im.Compter("INBOX"), im.Compter("Archives"))
+	if im.Count("INBOX") != 2 || im.Count("Archives") != 1 {
+		t.Fatalf("move: INBOX=%d Archives=%d", im.Count("INBOX"), im.Count("Archives"))
 	}
 }
 
-func TestEnvoyerRepondreBrouillon(t *testing.T) {
+func TestSendReplyDraft(t *testing.T) {
 	ctx := context.Background()
-	b, im, sm := boite(t)
-	im.Deposer(t, "<rdv@x>", "Claire <claire@exemple.fr>", "Point projet", "Dispo jeudi ?")
-	msgs, _ := b.Derniers(ctx, 1)
+	mb, im, sm := newMailbox(t)
+	im.Deliver(t, "<meeting@x>", "Claire <claire@example.com>", "Project sync", "Free Thursday?")
+	msgs, _ := mb.Recent(ctx, 1)
 
-	// Répondre : destinataire, Re:, fil de discussion
-	if _, err := b.Repondre(ctx, msgs[0], "Jeudi 14h me convient."); err != nil {
+	// Reply: recipient, Re:, thread headers
+	if _, err := mb.Reply(ctx, msgs[0], "Thursday 2pm works for me."); err != nil {
 		t.Fatal(err)
 	}
-	// Envoyer avec copie et HTML
-	if _, err := b.Envoyer(ctx, mail.Envoi{A: []string{"a@x.fr"}, Cc: []string{"b@x.fr"}, Sujet: "Été ✓", Texte: "Bonjour", HTML: "<p>Bonjour</p>"}); err != nil {
+	// Send with a copy and HTML
+	outgoing := mail.Outgoing{To: []string{"a@x.com"}, Cc: []string{"b@x.com"}, Subject: "Summer ✓", Text: "Hello", HTML: "<p>Hello</p>"}
+	if _, err := mb.Send(ctx, outgoing); err != nil {
 		t.Fatal(err)
 	}
-	recus := sm.Mails()
-	if len(recus) != 2 {
-		t.Fatalf("attendu 2 mails, obtenu %d", len(recus))
+	sent := sm.Mails()
+	if len(sent) != 2 {
+		t.Fatalf("expected 2 mails, got %d", len(sent))
 	}
-	r := recus[0].Brut
-	for _, attendu := range []string{"To: claire@exemple.fr", "Subject: Re: Point projet", "In-Reply-To: <rdv@x>", "References: <rdv@x>"} {
-		if !strings.Contains(r, attendu) {
-			t.Errorf("réponse : %q absent de\n%s", attendu, r)
+	raw := sent[0].Raw
+	for _, want := range []string{"To: claire@example.com", "Subject: Re: Project sync", "In-Reply-To: <meeting@x>", "References: <meeting@x>"} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("reply: %q missing from\n%s", want, raw)
 		}
 	}
-	if len(recus[1].A) != 2 || !strings.Contains(recus[1].Brut, "multipart/alternative") || !strings.Contains(recus[1].Brut, "=?utf-8?q?") {
-		t.Errorf("envoi HTML/copie incorrect : %+v", recus[1])
+	if len(sent[1].To) != 2 || !strings.Contains(sent[1].Raw, "multipart/alternative") || !strings.Contains(sent[1].Raw, "=?utf-8?q?") {
+		t.Errorf("HTML/copy send incorrect: %+v", sent[1])
 	}
 
-	// Erreur claire sans destinataire
-	if _, err := b.Envoyer(ctx, mail.Envoi{Texte: "x"}); err == nil {
-		t.Error("erreur attendue sans destinataire")
+	// Clear error when there is no recipient
+	if _, err := mb.Send(ctx, mail.Outgoing{Text: "x"}); err == nil {
+		t.Error("expected an error without a recipient")
 	}
 
-	// Brouillon : déposé dans le dossier \Drafts, rien n'est envoyé
-	dossier, err := b.DeposerBrouillon(ctx, mail.ReponseA(msgs[0], "À relire"))
-	if err != nil || dossier != "Drafts" || im.Compter("Drafts") != 1 || len(sm.Mails()) != 2 {
-		t.Fatalf("brouillon : dossier=%q err=%v drafts=%d envoyés=%d", dossier, err, im.Compter("Drafts"), len(sm.Mails()))
+	// Draft: saved to the \Drafts folder, nothing is sent
+	folder, err := mb.SaveDraft(ctx, mail.ReplyTo(msgs[0], "To review"))
+	if err != nil || folder != "Drafts" || im.Count("Drafts") != 1 || len(sm.Mails()) != 2 {
+		t.Fatalf("draft: folder=%q err=%v drafts=%d sent=%d", folder, err, im.Count("Drafts"), len(sm.Mails()))
 	}
 }
 
-func TestConfigDeduitSMTP(t *testing.T) {
-	c := mail.Nouveau(mail.Config{IMAPHost: "imap.gmail.com:993", User: "moi@gmail.com", Pass: "x"}).Config()
-	if c.SMTPHost != "smtp.gmail.com" || c.SMTPPort != 587 || c.From != "moi@gmail.com" || c.IMAPSansTLS {
-		t.Fatalf("config : %+v", c)
+func TestConfigDerivesSMTP(t *testing.T) {
+	cfg := mail.New(mail.Config{IMAPHost: "imap.gmail.com:993", User: "me@gmail.com", Pass: "x"}).Config()
+	if cfg.SMTPHost != "smtp.gmail.com" || cfg.SMTPPort != 587 || cfg.From != "me@gmail.com" || cfg.IMAPInsecure {
+		t.Fatalf("config: %+v", cfg)
 	}
 }

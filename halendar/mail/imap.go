@@ -12,127 +12,132 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	_ "github.com/emersion/go-message/charset" // accents, ISO-8859-1…
+	_ "github.com/emersion/go-message/charset" // accented characters, ISO-8859-1, ...
 	gomail "github.com/emersion/go-message/mail"
 )
 
-// session ouvre une connexion IMAP authentifiée, sélectionne le dossier et exécute f.
-func (b *Boite) session(dossier string, lectureSeule bool, f func(c *imapclient.Client, box *imap.SelectData) error) error {
-	if b.cfg.IMAPHost == "" {
-		return errors.New("IMAP non configuré (MAIL_IMAP_HOST)")
+// withSession opens an authenticated IMAP connection, selects the folder, and runs fn.
+func (m *Mailbox) withSession(folder string, readOnly bool, fn func(c *imapclient.Client, box *imap.SelectData) error) error {
+	if m.cfg.IMAPHost == "" {
+		return errors.New("IMAP not configured (MAIL_IMAP_HOST)")
 	}
-	var c *imapclient.Client
+
+	var client *imapclient.Client
 	var err error
-	if !b.cfg.IMAPSansTLS {
-		c, err = imapclient.DialTLS(b.cfg.IMAPHost, nil)
+	if m.cfg.IMAPInsecure {
+		client, err = imapclient.DialInsecure(m.cfg.IMAPHost, nil)
 	} else {
-		c, err = imapclient.DialInsecure(b.cfg.IMAPHost, nil)
+		client, err = imapclient.DialTLS(m.cfg.IMAPHost, nil)
 	}
 	if err != nil {
-		return fmt.Errorf("IMAP : connexion impossible à %s : %w", b.cfg.IMAPHost, err)
+		return fmt.Errorf("IMAP: could not connect to %s: %w", m.cfg.IMAPHost, err)
 	}
-	defer c.Close()
-	if err := c.Login(b.cfg.User, b.cfg.Pass).Wait(); err != nil {
-		return fmt.Errorf("IMAP : login refusé (mot de passe d'application ?) : %w", err)
+	defer client.Close()
+
+	if err := client.Login(m.cfg.User, m.cfg.Pass).Wait(); err != nil {
+		return fmt.Errorf("IMAP: login refused (is it an app password?): %w", err)
 	}
+
 	var box *imap.SelectData
-	if dossier != "" {
-		if box, err = c.Select(dossier, &imap.SelectOptions{ReadOnly: lectureSeule}).Wait(); err != nil {
-			return fmt.Errorf("IMAP : dossier %q : %w", dossier, err)
+	if folder != "" {
+		box, err = client.Select(folder, &imap.SelectOptions{ReadOnly: readOnly}).Wait()
+		if err != nil {
+			return fmt.Errorf("IMAP: folder %q: %w", folder, err)
 		}
 	}
-	if err := f(c, box); err != nil {
+
+	if err := fn(client, box); err != nil {
 		return err
 	}
-	c.Logout().Wait()
+	client.Logout().Wait()
 	return nil
 }
 
-// Compter renvoie le nombre de messages du dossier.
-func (b *Boite) Compter(ctx context.Context) (uint32, error) {
+// Count returns the number of messages in the folder.
+func (m *Mailbox) Count(ctx context.Context) (uint32, error) {
 	var n uint32
-	err := b.session(b.cfg.Dossier, true, func(c *imapclient.Client, box *imap.SelectData) error {
+	err := m.withSession(m.cfg.Folder, true, func(c *imapclient.Client, box *imap.SelectData) error {
 		n = box.NumMessages
 		return nil
 	})
 	return n, err
 }
 
-// Dossiers liste les dossiers du compte (INBOX, Envoyés, Brouillons…).
-func (b *Boite) Dossiers(ctx context.Context) ([]string, error) {
-	var noms []string
-	err := b.session("", true, func(c *imapclient.Client, _ *imap.SelectData) error {
-		liste, err := c.List("", "*", nil).Collect()
-		for _, d := range liste {
-			noms = append(noms, d.Mailbox)
+// Folders lists the account's folders (INBOX, Sent, Drafts, ...).
+func (m *Mailbox) Folders(ctx context.Context) ([]string, error) {
+	var names []string
+	err := m.withSession("", true, func(c *imapclient.Client, _ *imap.SelectData) error {
+		list, err := c.List("", "*", nil).Collect()
+		for _, folder := range list {
+			names = append(names, folder.Mailbox)
 		}
 		return err
 	})
-	return noms, err
+	return names, err
 }
 
-// Derniers renvoie les n derniers messages, du plus récent au plus ancien.
-func (b *Boite) Derniers(ctx context.Context, n int) ([]Message, error) {
+// Recent returns the n most recent messages, newest first.
+func (m *Mailbox) Recent(ctx context.Context, n int) ([]Message, error) {
 	var msgs []Message
-	err := b.session(b.cfg.Dossier, true, func(c *imapclient.Client, box *imap.SelectData) error {
+	err := m.withSession(m.cfg.Folder, true, func(c *imapclient.Client, box *imap.SelectData) error {
 		if box.NumMessages == 0 {
 			return nil
 		}
-		debut := uint32(1)
+		start := uint32(1)
 		if box.NumMessages > uint32(n) {
-			debut = box.NumMessages - uint32(n) + 1
+			start = box.NumMessages - uint32(n) + 1
 		}
 		var seq imap.SeqSet
-		seq.AddRange(debut, box.NumMessages)
+		seq.AddRange(start, box.NumMessages)
 		var err error
-		msgs, err = recuperer(c, seq)
+		msgs, err = fetch(c, seq)
 		return err
 	})
-	return plusRecentsDabord(msgs), err
+	return newestFirst(msgs), err
 }
 
-// Nouveaux renvoie les messages dont l'UID est > dernierUID, et le plus grand UID connu.
-// Premier appel avec dernierUID = 0 : ne renvoie rien, mais donne le point de départ
-// (pour ne pas traiter tout l'historique). Gardez l'UID renvoyé pour l'appel suivant.
-func (b *Boite) Nouveaux(ctx context.Context, dernierUID uint32) ([]Message, uint32, error) {
+// NewSince returns the messages whose UID is greater than lastUID, plus the highest UID seen.
+// The first call, with lastUID = 0, returns nothing but gives a starting point (so the whole
+// history isn't processed). Keep the returned UID for the next call.
+func (m *Mailbox) NewSince(ctx context.Context, lastUID uint32) ([]Message, uint32, error) {
 	var msgs []Message
-	max := dernierUID
-	err := b.session(b.cfg.Dossier, true, func(c *imapclient.Client, box *imap.SelectData) error {
-		if dernierUID == 0 {
+	highest := lastUID
+	err := m.withSession(m.cfg.Folder, true, func(c *imapclient.Client, box *imap.SelectData) error {
+		if lastUID == 0 {
 			if box.UIDNext > 0 {
-				max = uint32(box.UIDNext) - 1
+				highest = uint32(box.UIDNext) - 1
 			}
 			return nil
 		}
-		if box.UIDNext != 0 && uint32(box.UIDNext) <= dernierUID+1 {
-			return nil // rien de nouveau
+		if box.UIDNext != 0 && uint32(box.UIDNext) <= lastUID+1 {
+			return nil // nothing new
 		}
 		var set imap.UIDSet
-		set.AddRange(imap.UID(dernierUID+1), 0) // 0 = jusqu'au dernier
-		tous, err := recuperer(c, set)
-		for _, m := range tous {
-			if m.UID > dernierUID { // le serveur renvoie toujours au moins le dernier
-				msgs = append(msgs, m)
-				if m.UID > max {
-					max = m.UID
+		set.AddRange(imap.UID(lastUID+1), 0) // 0 means up to the last one
+		all, err := fetch(c, set)
+		for _, msg := range all {
+			if msg.UID > lastUID { // the server always returns at least the last one
+				msgs = append(msgs, msg)
+				if msg.UID > highest {
+					highest = msg.UID
 				}
 			}
 		}
 		return err
 	})
-	return msgs, max, err
+	return msgs, highest, err
 }
 
-// Lire renvoie un message par UID.
-func (b *Boite) Lire(ctx context.Context, uid uint32) (*Message, error) {
+// Read returns one message by UID.
+func (m *Mailbox) Read(ctx context.Context, uid uint32) (*Message, error) {
 	var msg *Message
-	err := b.session(b.cfg.Dossier, true, func(c *imapclient.Client, _ *imap.SelectData) error {
-		msgs, err := recuperer(c, imap.UIDSetNum(imap.UID(uid)))
+	err := m.withSession(m.cfg.Folder, true, func(c *imapclient.Client, _ *imap.SelectData) error {
+		msgs, err := fetch(c, imap.UIDSetNum(imap.UID(uid)))
 		if err != nil {
 			return err
 		}
 		if len(msgs) == 0 {
-			return fmt.Errorf("message UID %d introuvable", uid)
+			return fmt.Errorf("message UID %d not found", uid)
 		}
 		msg = &msgs[0]
 		return nil
@@ -140,32 +145,33 @@ func (b *Boite) Lire(ctx context.Context, uid uint32) (*Message, error) {
 	return msg, err
 }
 
-// Rechercher trouve les messages correspondant aux critères (les plus récents d'abord).
-func (b *Boite) Rechercher(ctx context.Context, r Recherche) ([]Message, error) {
-	crit := &imap.SearchCriteria{Since: r.Depuis, Before: r.Avant}
-	if r.NonLus {
-		crit.NotFlag = []imap.Flag{imap.FlagSeen}
+// Search finds the messages matching the given criteria, most recent first.
+func (m *Mailbox) Search(ctx context.Context, q SearchQuery) ([]Message, error) {
+	criteria := &imap.SearchCriteria{Since: q.Since, Before: q.Before}
+	if q.Unread {
+		criteria.NotFlag = []imap.Flag{imap.FlagSeen}
 	}
-	if r.De != "" {
-		crit.Header = append(crit.Header, imap.SearchCriteriaHeaderField{Key: "From", Value: r.De})
+	if q.From != "" {
+		criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: "From", Value: q.From})
 	}
-	if r.Sujet != "" {
-		crit.Header = append(crit.Header, imap.SearchCriteriaHeaderField{Key: "Subject", Value: r.Sujet})
+	if q.Subject != "" {
+		criteria.Header = append(criteria.Header, imap.SearchCriteriaHeaderField{Key: "Subject", Value: q.Subject})
 	}
-	if r.Contient != "" {
-		crit.Body = []string{r.Contient}
+	if q.Contains != "" {
+		criteria.Body = []string{q.Contains}
 	}
-	max := r.Max
+	max := q.Max
 	if max <= 0 {
 		max = 50
 	}
+
 	var msgs []Message
-	err := b.session(b.cfg.Dossier, true, func(c *imapclient.Client, _ *imap.SelectData) error {
-		res, err := c.UIDSearch(crit, nil).Wait()
+	err := m.withSession(m.cfg.Folder, true, func(c *imapclient.Client, _ *imap.SelectData) error {
+		result, err := c.UIDSearch(criteria, nil).Wait()
 		if err != nil {
-			return fmt.Errorf("IMAP : recherche : %w", err)
+			return fmt.Errorf("IMAP: search: %w", err)
 		}
-		uids := res.AllUIDs()
+		uids := result.AllUIDs()
 		if len(uids) == 0 {
 			return nil
 		}
@@ -173,45 +179,45 @@ func (b *Boite) Rechercher(ctx context.Context, r Recherche) ([]Message, error) 
 		if len(uids) > max {
 			uids = uids[:max]
 		}
-		msgs, err = recuperer(c, imap.UIDSetNum(uids...))
+		msgs, err = fetch(c, imap.UIDSetNum(uids...))
 		return err
 	})
-	return plusRecentsDabord(msgs), err
+	return newestFirst(msgs), err
 }
 
-// MarquerLu marque des messages comme lus (lu=true) ou non lus (lu=false).
-func (b *Boite) MarquerLu(ctx context.Context, lu bool, uids ...uint32) error {
+// MarkRead marks messages as read (read=true) or unread (read=false).
+func (m *Mailbox) MarkRead(ctx context.Context, read bool, uids ...uint32) error {
 	op := imap.StoreFlagsAdd
-	if !lu {
+	if !read {
 		op = imap.StoreFlagsDel
 	}
-	return b.session(b.cfg.Dossier, false, func(c *imapclient.Client, _ *imap.SelectData) error {
+	return m.withSession(m.cfg.Folder, false, func(c *imapclient.Client, _ *imap.SelectData) error {
 		return c.Store(uidSet(uids), &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close()
 	})
 }
 
-// Deplacer range des messages dans un autre dossier (ex : "Archives").
-func (b *Boite) Deplacer(ctx context.Context, dossier string, uids ...uint32) error {
-	return b.session(b.cfg.Dossier, false, func(c *imapclient.Client, _ *imap.SelectData) error {
-		_, err := c.Move(uidSet(uids), dossier).Wait()
+// Move moves messages to another folder (e.g. "Archives").
+func (m *Mailbox) Move(ctx context.Context, folder string, uids ...uint32) error {
+	return m.withSession(m.cfg.Folder, false, func(c *imapclient.Client, _ *imap.SelectData) error {
+		_, err := c.Move(uidSet(uids), folder).Wait()
 		return err
 	})
 }
 
-// DeposerBrouillon enregistre le mail dans les Brouillons du compte au lieu de l'envoyer :
-// l'utilisateur le relit et l'envoie depuis sa messagerie habituelle.
-func (b *Boite) DeposerBrouillon(ctx context.Context, e Envoi) (dossier string, err error) {
-	_, brut, err := b.construire(e)
+// SaveDraft stores the mail in the account's Drafts folder instead of sending it:
+// the user reviews it and sends it from their usual mail client.
+func (m *Mailbox) SaveDraft(ctx context.Context, o Outgoing) (folder string, err error) {
+	_, raw, err := m.build(o)
 	if err != nil {
 		return "", err
 	}
-	err = b.session("", false, func(c *imapclient.Client, _ *imap.SelectData) error {
-		dossier = dossierBrouillons(c)
-		if dossier == "" {
-			return errors.New("IMAP : dossier Brouillons introuvable")
+	err = m.withSession("", false, func(c *imapclient.Client, _ *imap.SelectData) error {
+		folder = draftsFolder(c)
+		if folder == "" {
+			return errors.New("IMAP: Drafts folder not found")
 		}
-		cmd := c.Append(dossier, int64(len(brut)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft, imap.FlagSeen}, Time: time.Now()})
-		if _, err := cmd.Write(brut); err != nil {
+		cmd := c.Append(folder, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft, imap.FlagSeen}, Time: time.Now()})
+		if _, err := cmd.Write(raw); err != nil {
 			return err
 		}
 		if err := cmd.Close(); err != nil {
@@ -220,24 +226,24 @@ func (b *Boite) DeposerBrouillon(ctx context.Context, e Envoi) (dossier string, 
 		_, err := cmd.Wait()
 		return err
 	})
-	return dossier, err
+	return folder, err
 }
 
-// ── interne ─────────────────────────────────────────────────────────────────
+// ── internal ────────────────────────────────────────────────────────────────
 
-func dossierBrouillons(c *imapclient.Client) string {
-	liste, _ := c.List("", "*", nil).Collect()
-	for _, d := range liste {
-		for _, a := range d.Attrs {
-			if a == imap.MailboxAttrDrafts {
-				return d.Mailbox
+func draftsFolder(c *imapclient.Client) string {
+	list, _ := c.List("", "*", nil).Collect()
+	for _, folder := range list {
+		for _, attr := range folder.Attrs {
+			if attr == imap.MailboxAttrDrafts {
+				return folder.Mailbox
 			}
 		}
 	}
-	for _, nom := range []string{"Drafts", "Brouillons", "[Gmail]/Drafts", "[Gmail]/Brouillons", "INBOX.Drafts", "INBOX/Drafts"} {
-		for _, d := range liste {
-			if strings.EqualFold(d.Mailbox, nom) {
-				return d.Mailbox
+	for _, name := range []string{"Drafts", "Brouillons", "[Gmail]/Drafts", "[Gmail]/Brouillons", "INBOX.Drafts", "INBOX/Drafts"} {
+		for _, folder := range list {
+			if strings.EqualFold(folder.Mailbox, name) {
+				return folder.Mailbox
 			}
 		}
 	}
@@ -245,121 +251,124 @@ func dossierBrouillons(c *imapclient.Client) string {
 }
 
 func uidSet(uids []uint32) imap.UIDSet {
-	var s imap.UIDSet
-	for _, u := range uids {
-		s.AddNum(imap.UID(u))
+	var set imap.UIDSet
+	for _, uid := range uids {
+		set.AddNum(imap.UID(uid))
 	}
-	return s
+	return set
 }
 
-func recuperer(c *imapclient.Client, set imap.NumSet) ([]Message, error) {
-	section := &imap.FetchItemBodySection{Peek: true} // Peek : ne marque pas comme lu
+func fetch(c *imapclient.Client, set imap.NumSet) ([]Message, error) {
+	section := &imap.FetchItemBodySection{Peek: true} // Peek: does not mark the message as read
 	bufs, err := c.Fetch(set, &imap.FetchOptions{
 		UID: true, Flags: true, Envelope: true,
 		BodySection: []*imap.FetchItemBodySection{section},
 	}).Collect()
 	if err != nil {
-		return nil, fmt.Errorf("IMAP : lecture des messages : %w", err)
+		return nil, fmt.Errorf("IMAP: reading messages: %w", err)
 	}
+
 	out := make([]Message, 0, len(bufs))
 	for _, buf := range bufs {
 		if buf.Envelope == nil {
 			continue
 		}
 		env := buf.Envelope
-		m := Message{
-			UID:   uint32(buf.UID),
-			ID:    Crochets(env.MessageID), // la bibliothèque retire les < >
-			Sujet: env.Subject,
-			Date:  env.Date,
+		msg := Message{
+			UID:     uint32(buf.UID),
+			ID:      Bracket(env.MessageID), // the library strips the < >
+			Subject: env.Subject,
+			Date:    env.Date,
 		}
 		if len(env.From) > 0 {
-			m.De, m.DeNom = env.From[0].Addr(), env.From[0].Name
+			msg.From, msg.FromName = env.From[0].Addr(), env.From[0].Name
 		}
 		if len(env.ReplyTo) > 0 && env.ReplyTo[0].Addr() != "" {
-			m.De = env.ReplyTo[0].Addr()
+			msg.From = env.ReplyTo[0].Addr()
 		}
-		for _, a := range env.To {
-			m.A = append(m.A, a.Addr())
+		for _, addr := range env.To {
+			msg.To = append(msg.To, addr.Addr())
 		}
-		for _, a := range env.Cc {
-			m.Cc = append(m.Cc, a.Addr())
+		for _, addr := range env.Cc {
+			msg.Cc = append(msg.Cc, addr.Addr())
 		}
-		for _, f := range buf.Flags {
-			if f == imap.FlagSeen {
-				m.Lu = true
+		for _, flag := range buf.Flags {
+			if flag == imap.FlagSeen {
+				msg.Read = true
 			}
 		}
-		if m.ID == "" {
-			m.ID = fmt.Sprintf("<uid-%d@imap>", buf.UID)
+		if msg.ID == "" {
+			msg.ID = fmt.Sprintf("<uid-%d@imap>", buf.UID)
 		}
-		analyserCorps(&m, buf.FindBodySection(section))
-		out = append(out, m)
+		parseBody(&msg, buf.FindBodySection(section))
+		out = append(out, msg)
 	}
 	return out, nil
 }
 
-func analyserCorps(m *Message, raw []byte) {
+func parseBody(msg *Message, raw []byte) {
 	r, err := gomail.CreateReader(bytes.NewReader(raw))
 	if err != nil {
 		return
 	}
-	m.References = r.Header.Get("References")
-	if m.Date.IsZero() {
-		m.Date, _ = r.Header.Date()
+	msg.References = r.Header.Get("References")
+	if msg.Date.IsZero() {
+		msg.Date, _ = r.Header.Date()
 	}
 	for {
-		p, err := r.NextPart()
+		part, err := r.NextPart()
 		if errors.Is(err, io.EOF) || err != nil {
 			break
 		}
-		switch h := p.Header.(type) {
+		switch header := part.Header.(type) {
 		case *gomail.InlineHeader:
-			ct, _, _ := h.ContentType()
-			contenu, _ := io.ReadAll(io.LimitReader(p.Body, 2<<20))
+			contentType, _, _ := header.ContentType()
+			content, _ := io.ReadAll(io.LimitReader(part.Body, 2<<20))
 			switch {
-			case ct == "text/plain" && m.Texte == "":
-				m.Texte = strings.TrimSpace(string(contenu))
-			case ct == "text/html" && m.HTML == "":
-				m.HTML = string(contenu)
+			case contentType == "text/plain" && msg.Text == "":
+				msg.Text = strings.TrimSpace(string(content))
+			case contentType == "text/html" && msg.HTML == "":
+				msg.HTML = string(content)
 			}
 		case *gomail.AttachmentHeader:
-			nom, _ := h.Filename()
-			ct, _, _ := h.ContentType()
-			n, _ := io.Copy(io.Discard, p.Body)
-			m.PiecesJointes = append(m.PiecesJointes, PieceJointe{Nom: nom, Type: ct, Taille: int(n)})
+			name, _ := header.Filename()
+			contentType, _, _ := header.ContentType()
+			size, _ := io.Copy(io.Discard, part.Body)
+			msg.Attachments = append(msg.Attachments, Attachment{Name: name, Type: contentType, Size: int(size)})
 		}
 	}
-	if m.Texte == "" && m.HTML != "" {
-		m.Texte = HTMLVersTexte(m.HTML)
+	if msg.Text == "" && msg.HTML != "" {
+		msg.Text = HTMLToText(msg.HTML)
 	}
 }
 
-// HTMLVersTexte : nettoyage simple d'un corps HTML.
-func HTMLVersTexte(h string) string {
+// HTMLToText does a simple cleanup of an HTML body.
+func HTMLToText(html string) string {
 	var sb strings.Builder
-	dansBalise := false
-	for _, r := range strings.NewReplacer("<br>", "\n", "<br/>", "\n", "<br />", "\n", "</p>", "\n", "</div>", "\n", "</tr>", "\n").Replace(h) {
+	insideTag := false
+	replacer := strings.NewReplacer("<br>", "\n", "<br/>", "\n", "<br />", "\n", "</p>", "\n", "</div>", "\n", "</tr>", "\n")
+	for _, r := range replacer.Replace(html) {
 		switch {
 		case r == '<':
-			dansBalise = true
+			insideTag = true
 		case r == '>':
-			dansBalise = false
-		case !dansBalise:
+			insideTag = false
+		case !insideTag:
 			sb.WriteRune(r)
 		}
 	}
-	t := strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(sb.String())
-	var lignes []string
-	for _, l := range strings.Split(t, "\n") {
-		if l = strings.TrimSpace(l); l != "" {
-			lignes = append(lignes, l)
+	text := strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(sb.String())
+
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
 		}
 	}
-	return strings.Join(lignes, "\n")
+	return strings.Join(lines, "\n")
 }
 
-func plusRecentsDabord(msgs []Message) []Message {
+func newestFirst(msgs []Message) []Message {
 	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].UID > msgs[j].UID })
 	return msgs
 }

@@ -1,9 +1,9 @@
-// Package mail : lire (IMAP) et envoyer (SMTP) des mails.
+// Package mail reads (IMAP) and sends (SMTP) email.
 //
-//	cfg := mail.ConfigDepuisEnv()          // ou remplir mail.Config à la main
-//	boite := mail.Nouveau(cfg)
-//	msgs, _ := boite.Derniers(ctx, 10)
-//	boite.Repondre(ctx, msgs[0], "Merci, c'est noté.")
+//	cfg := mail.ConfigFromEnv()          // or fill in mail.Config by hand
+//	mailbox := mail.New(cfg)
+//	msgs, _ := mailbox.Recent(ctx, 10)
+//	mailbox.Reply(ctx, msgs[0], "Thanks, noted.")
 package mail
 
 import (
@@ -16,64 +16,66 @@ import (
 	"halendar/envfile"
 )
 
-// Config : un compte mail. Les champs SMTP sont déduits de l'IMAP s'ils sont vides.
+// Config describes one mail account. The SMTP fields are guessed from the
+// IMAP host when left empty.
 type Config struct {
-	IMAPHost    string // "imap.gmail.com:993"
-	IMAPSansTLS bool   // true seulement pour un serveur local de test
-	Dossier     string // "INBOX" par défaut
+	IMAPHost     string // "imap.gmail.com:993"
+	IMAPInsecure bool   // true only for a local test server, never for a real account
+	Folder       string // "INBOX" by default
 
-	SMTPHost string // "smtp.gmail.com" (déduit de IMAPHost si vide)
-	SMTPPort int    // 587 (STARTTLS) ou 465 (TLS direct)
+	SMTPHost string // "smtp.gmail.com" (guessed from IMAPHost when empty)
+	SMTPPort int    // 587 (STARTTLS) or 465 (direct TLS)
 
-	User string // adresse du compte
-	Pass string // mot de passe (d'application pour Gmail, iCloud, Yahoo…)
-	From string // expéditeur affiché, ex : "Équipe Halendar <moi@gmail.com>" (défaut : User)
+	User string // account address
+	Pass string // password (an app password for Gmail, iCloud, Yahoo, ...)
+	From string // display sender, e.g. "Halendar Team <me@gmail.com>" (defaults to User)
 }
 
-// ConfigDepuisEnv lit MAIL_* dans l'environnement (après envfile.Charger(".env")).
-func ConfigDepuisEnv() Config {
-	c := Config{
-		IMAPHost:    envfile.Texte("MAIL_IMAP_HOST", ""),
-		IMAPSansTLS: !envfile.Booleen("MAIL_IMAP_TLS", true),
-		Dossier:     envfile.Texte("MAIL_DOSSIER", "INBOX"),
-		SMTPHost:    envfile.Texte("MAIL_SMTP_HOST", ""),
-		SMTPPort:    envfile.Entier("MAIL_SMTP_PORT", 0),
-		User:        envfile.Texte("MAIL_USER", ""),
-		Pass:        envfile.Texte("MAIL_PASS", ""),
-		From:        envfile.Texte("MAIL_FROM", ""),
+// ConfigFromEnv reads MAIL_* from the environment (after envfile.Load(".env")).
+func ConfigFromEnv() Config {
+	cfg := Config{
+		IMAPHost:     envfile.String("MAIL_IMAP_HOST", ""),
+		IMAPInsecure: !envfile.Bool("MAIL_IMAP_TLS", true),
+		Folder:       envfile.String("MAIL_FOLDER", "INBOX"),
+		SMTPHost:     envfile.String("MAIL_SMTP_HOST", ""),
+		SMTPPort:     envfile.Int("MAIL_SMTP_PORT", 0),
+		User:         envfile.String("MAIL_USER", ""),
+		Pass:         envfile.String("MAIL_PASS", ""),
+		From:         envfile.String("MAIL_FROM", ""),
 	}
-	return c.completer()
+	return cfg.withDefaults()
 }
 
-// Manquant renvoie les champs obligatoires vides (liste vide = configuration OK).
-func (c Config) Manquant() []string {
-	var m []string
+// Missing returns which required fields are still empty (empty slice = configuration is OK).
+func (c Config) Missing() []string {
+	var missing []string
 	if c.IMAPHost == "" && c.SMTPHost == "" {
-		m = append(m, "MAIL_IMAP_HOST")
+		missing = append(missing, "MAIL_IMAP_HOST")
 	}
 	if c.User == "" {
-		m = append(m, "MAIL_USER")
+		missing = append(missing, "MAIL_USER")
 	}
 	if c.Pass == "" {
-		m = append(m, "MAIL_PASS")
+		missing = append(missing, "MAIL_PASS")
 	}
-	return m
+	return missing
 }
 
-func (c Config) completer() Config {
-	if c.Dossier == "" {
-		c.Dossier = "INBOX"
+func (c Config) withDefaults() Config {
+	if c.Folder == "" {
+		c.Folder = "INBOX"
 	}
 	if c.SMTPHost == "" && strings.HasPrefix(c.IMAPHost, "imap.") {
-		h := strings.TrimPrefix(c.IMAPHost, "imap.")
-		if i := strings.LastIndex(h, ":"); i >= 0 {
-			h = h[:i]
+		host := strings.TrimPrefix(c.IMAPHost, "imap.")
+		if i := strings.LastIndex(host, ":"); i >= 0 {
+			host = host[:i]
 		}
-		c.SMTPHost = "smtp." + h
+		c.SMTPHost = "smtp." + host
 	}
-	if i := strings.LastIndex(c.SMTPHost, ":"); i >= 0 { // "smtp.x.com:465" accepté
-		if p, err := strconv.Atoi(c.SMTPHost[i+1:]); err == nil {
-			c.SMTPPort, c.SMTPHost = p, c.SMTPHost[:i]
+	if i := strings.LastIndex(c.SMTPHost, ":"); i >= 0 { // "smtp.x.com:465" is accepted
+		if port, err := strconv.Atoi(c.SMTPHost[i+1:]); err == nil {
+			c.SMTPPort = port
+			c.SMTPHost = c.SMTPHost[:i]
 		}
 	}
 	if c.SMTPPort == 0 {
@@ -85,90 +87,90 @@ func (c Config) completer() Config {
 	return c
 }
 
-// Message : un mail reçu.
+// Message is a received email.
 type Message struct {
-	UID           uint32        `json:"uid"`
-	ID            string        `json:"id"` // Message-ID, ex : <abc@exemple.fr>
-	De            string        `json:"de"` // adresse à qui répondre
-	DeNom         string        `json:"de_nom,omitempty"`
-	A             []string      `json:"a,omitempty"`
-	Cc            []string      `json:"cc,omitempty"`
-	Sujet         string        `json:"sujet"`
-	Date          time.Time     `json:"date"`
-	Texte         string        `json:"texte"`          // partie texte (ou HTML nettoyé)
-	HTML          string        `json:"html,omitempty"` // partie HTML brute si présente
-	References    string        `json:"references,omitempty"`
-	Lu            bool          `json:"lu"`
-	PiecesJointes []PieceJointe `json:"pieces_jointes,omitempty"`
+	UID         uint32       `json:"uid"`
+	ID          string       `json:"id"` // Message-ID, e.g. <abc@example.com>
+	From        string       `json:"from"`
+	FromName    string       `json:"from_name,omitempty"`
+	To          []string     `json:"to,omitempty"`
+	Cc          []string     `json:"cc,omitempty"`
+	Subject     string       `json:"subject"`
+	Date        time.Time    `json:"date"`
+	Text        string       `json:"text"`           // plain-text part (or HTML converted to text)
+	HTML        string       `json:"html,omitempty"` // raw HTML part, if present
+	References  string       `json:"references,omitempty"`
+	Read        bool         `json:"read"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
-// PieceJointe : description (sans le contenu) d'une pièce jointe.
-type PieceJointe struct {
-	Nom    string `json:"nom"`
-	Type   string `json:"type"`
-	Taille int    `json:"taille"`
+// Attachment describes an attachment without its content.
+type Attachment struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Size int    `json:"size"`
 }
 
-// Envoi : un mail à envoyer.
-type Envoi struct {
-	A          []string `json:"a"`
+// Outgoing is an email to be sent.
+type Outgoing struct {
+	To         []string `json:"to"`
 	Cc         []string `json:"cc,omitempty"`
-	Cci        []string `json:"cci,omitempty"`
-	Sujet      string   `json:"sujet"`
-	Texte      string   `json:"texte"`
-	HTML       string   `json:"html,omitempty"`         // optionnel : version HTML en plus du texte
-	EnReponseA string   `json:"en_reponse_a,omitempty"` // Message-ID du mail d'origine
+	Bcc        []string `json:"bcc,omitempty"`
+	Subject    string   `json:"subject"`
+	Text       string   `json:"text"`
+	HTML       string   `json:"html,omitempty"` // optional: HTML version alongside the text
+	InReplyTo  string   `json:"in_reply_to,omitempty"`
 	References string   `json:"references,omitempty"`
 }
 
-// Recherche : critères combinés (tous optionnels).
-type Recherche struct {
-	NonLus   bool      `json:"non_lus,omitempty"`
-	Depuis   time.Time `json:"depuis,omitempty"`
-	Avant    time.Time `json:"avant,omitempty"`
-	De       string    `json:"de,omitempty"`
-	Sujet    string    `json:"sujet,omitempty"`
-	Contient string    `json:"contient,omitempty"` // dans le corps
-	Max      int       `json:"max,omitempty"`      // les plus récents d'abord ; 0 = 50
+// SearchQuery holds combined search criteria (all optional).
+type SearchQuery struct {
+	Unread   bool      `json:"unread,omitempty"`
+	Since    time.Time `json:"since,omitempty"`
+	Before   time.Time `json:"before,omitempty"`
+	From     string    `json:"from,omitempty"`
+	Subject  string    `json:"subject,omitempty"`
+	Contains string    `json:"contains,omitempty"` // searched in the body
+	Max      int       `json:"max,omitempty"`      // most recent first; 0 means 50
 }
 
-// Boite regroupe la lecture et l'envoi pour un compte.
-type Boite struct {
+// Mailbox groups reading and sending for one account.
+type Mailbox struct {
 	cfg Config
 }
 
-func Nouveau(cfg Config) *Boite { return &Boite{cfg: cfg.completer()} }
+func New(cfg Config) *Mailbox { return &Mailbox{cfg: cfg.withDefaults()} }
 
-func (b *Boite) Config() Config { return b.cfg }
+func (m *Mailbox) Config() Config { return m.cfg }
 
-// Tester vérifie la connexion IMAP et SMTP sans rien modifier.
-func (b *Boite) Tester(ctx context.Context) error {
-	if m := b.cfg.Manquant(); len(m) > 0 {
-		return fmt.Errorf("configuration incomplète : %s", strings.Join(m, ", "))
+// Test checks the IMAP and SMTP connections without changing anything.
+func (m *Mailbox) Test(ctx context.Context) error {
+	if missing := m.cfg.Missing(); len(missing) > 0 {
+		return fmt.Errorf("incomplete configuration: %s", strings.Join(missing, ", "))
 	}
-	var erreurs []string
-	if b.cfg.IMAPHost != "" {
-		if _, err := b.Compter(ctx); err != nil {
-			erreurs = append(erreurs, err.Error())
+	var errs []string
+	if m.cfg.IMAPHost != "" {
+		if _, err := m.Count(ctx); err != nil {
+			errs = append(errs, err.Error())
 		}
 	}
-	if b.cfg.SMTPHost != "" {
-		c, err := b.smtpClient()
+	if m.cfg.SMTPHost != "" {
+		client, err := m.smtpClient()
 		if err != nil {
-			erreurs = append(erreurs, err.Error())
+			errs = append(errs, err.Error())
 		} else {
-			c.Quit()
-			c.Close()
+			client.Quit()
+			client.Close()
 		}
 	}
-	if len(erreurs) > 0 {
-		return fmt.Errorf("%s", strings.Join(erreurs, " ; "))
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
 }
 
-// Crochets normalise un Message-ID au format <id@domaine> (nécessaire pour rester dans le fil).
-func Crochets(id string) string {
+// Bracket normalizes a Message-ID to the <id@domain> form (required to stay in the thread).
+func Bracket(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" || strings.HasPrefix(id, "<") {
 		return id
