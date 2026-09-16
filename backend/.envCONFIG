@@ -25,3 +25,20 @@ SMTP_PORT=587
 SMTP_USERNAME=username
 SMTP_PASSWORD=anotherSuperSecretPass
 SMTP_SENDER="Team <no-reply@team.com>"
+
+# User mailbox read/sent through the /v1/mail endpoints (an app password, not the account password)
+MAIL_IMAP_HOST=imap.gmail.com:993
+MAIL_IMAP_TLS=TRUE
+MAIL_FOLDER=INBOX
+MAIL_SMTP_HOST=smtp.gmail.com
+MAIL_SMTP_PORT=587
+MAIL_USER=user@gmail.com
+MAIL_PASS=anAppPassword
+MAIL_FROM="Halendar <user@gmail.com>"
+
+# CalDAV calendar read/written through the /v1/calendar endpoints
+CALDAV_URL=https://caldav.icloud.com/
+CALDAV_USER=user@icloud.com
+CALDAV_PASS=anAppPassword
+CALDAV_CALENDAR=
+CALDAV_TIMEZONE=Europe/Paris

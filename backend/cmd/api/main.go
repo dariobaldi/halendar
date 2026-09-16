@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dariobaldi/halendar_back/internal/calendar"
 	"github.com/dariobaldi/halendar_back/internal/data"
+	"github.com/dariobaldi/halendar_back/internal/mail"
 	"github.com/dariobaldi/halendar_back/internal/mailer"
 	"github.com/dariobaldi/halendar_back/internal/vcs"
 	"github.com/dariobaldi/halendar_back/internal/websocket"
@@ -61,6 +63,8 @@ type app struct {
 	logger          *slog.Logger
 	fileLogger      *slog.Logger
 	mailer          mailer.Mailer
+	mailbox         *mail.Mailbox
+	calendar        *calendar.Client
 	models          data.Models
 	mu              sync.Mutex
 	websockets      map[string]*websocket.Hub
@@ -136,6 +140,8 @@ func main() {
 		fileLogger: loggerFile,
 		models:     data.NewModels(db),
 		mailer:     mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
+		mailbox:    mail.New(mail.ConfigFromEnv()),
+		calendar:   calendar.New(calendar.ConfigFromEnv()),
 		websockets: make(map[string]*websocket.Hub),
 	}
 
