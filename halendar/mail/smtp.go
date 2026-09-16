@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/smtp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -72,7 +73,7 @@ func (m *Mailbox) smtpClient() (*smtp.Client, error) {
 	if m.cfg.SMTPHost == "" {
 		return nil, errors.New("SMTP not configured (MAIL_SMTP_HOST)")
 	}
-	addr := fmt.Sprintf("%s:%d", m.cfg.SMTPHost, m.cfg.SMTPPort)
+	addr := net.JoinHostPort(m.cfg.SMTPHost, strconv.Itoa(m.cfg.SMTPPort))
 	tlsCfg := &tls.Config{ServerName: m.cfg.SMTPHost}
 
 	var conn net.Conn

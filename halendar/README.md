@@ -1,79 +1,45 @@
-# Halendar — mail and calendar modules
+# Halendar
 
-Bundles what used to be tested separately (IMAP reading, SMTP sending, CalDAV calendar)
-into **two reusable Go packages** that work the same way:
+A small Go toolkit for reading/sending mail over IMAP/SMTP and managing a
+CalDAV calendar, plus a CLI that drives both. Three independent packages —
+import them into another program, or use `main.go` as-is.
 
-```go
-envfile.Load(".env")
-
-mailbox := mail.New(mail.ConfigFromEnv())       // or mail.Config{...}
-cal     := calendar.New(calendar.ConfigFromEnv()) // or calendar.Config{...}
-
-mailbox.Test(ctx)
-cal.Test(ctx)
-```
-
-## Getting started
+## Install
 
 ```bash
-cp .env.example .env    # credentials for the mail account and the calendar
+cp .env.example .env    # fill in your mail + calendar credentials
 go mod tidy
-go run . health
+go run . health          # confirms both connections work
 ```
 
-## Package `mail`
+## CLI
 
-| Function | Role |
+| Command | Does |
 |---|---|
-| `Recent(ctx, n)` | n most recent mails (newest first) |
-| `NewSince(ctx, lastUID)` | mails received since the last call (returns the new UID to keep) |
-| `Read(ctx, uid)` | one mail: sender, recipients, text, HTML, attachments, read/unread |
-| `Search(ctx, SearchQuery{...})` | unread, sender, subject, contents, dates |
-| `MarkRead(ctx, read, uids...)` | read / unread |
-| `Move(ctx, folder, uids...)` | move a mail |
-| `Folders(ctx)` · `Count(ctx)` | the account's folders · number of mails |
-| `Send(ctx, Outgoing{...})` | to / cc / bcc, text and optional HTML |
-| `Reply(ctx, message, text)` | reply in the same thread (Re:, In-Reply-To, References) |
-| `ReplyTo(message, text)` | prepares a reply without sending it |
-| `SaveDraft(ctx, Outgoing{...})` | saves to Drafts instead of sending |
+| `health` | tests the mail + calendar connection |
+| `mails [n]` | n most recent mails |
+| `unread` | unread mails |
+| `read <uid>` | one full mail, as JSON |
+| `send send.json` | sends a mail |
+| `reply <uid> "text"` | replies in the same thread |
+| `draft send.json` | saves to Drafts instead of sending |
+| `calendar [days]` | upcoming schedule |
+| `add event.json` | adds or updates one or more events |
+| `delete <uid> [calendar]` | deletes an event |
 
-## Package `calendar`
+Sample payloads live in [`examples/`](examples/).
 
-| Function | Role |
-|---|---|
-| `Calendars(ctx)` | names of the calendars (task-only calendars like "Reminders" are skipped) |
-| `Events(ctx, start, end)` | every event in the period, recurring events expanded |
-| `Busy(ctx, start, end)` | is the slot taken? and by what |
-| `Add(ctx, Event{...})` | creates, or updates if the UID already exists (status confirmed / tentative / cancelled) |
-| `Delete(ctx, uid, calendar)` | deletes an event |
+## Packages
 
-`calendar.Event` can be read directly from JSON:
+- **`mail`** — `Mailbox`: read (`Recent`, `Search`, `Read`, `NewSince`), send (`Send`, `Reply`, `SaveDraft`), and manage (`MarkRead`, `Move`, `Folders`) a mail account.
+- **`calendar`** — `Client`: `Events`, `Busy`, `Add`, `Delete` against a CalDAV calendar. `Event` decodes directly from JSON (`duration_minutes`, all-day dates, timezone).
+- **`envfile`** — loads `.env` into the process environment; nothing fancier.
+- **`testutil`** — fake IMAP/SMTP/CalDAV servers used by the tests below.
 
-```json
-{ "title": "Pitch", "start": "2026-09-18T09:00", "duration_minutes": 60, "status": "tentative" }
-```
-
-(`"start": "2026-09-19"` means an all-day event; `"end"` can replace `"duration_minutes"`; `"timezone"` is optional.)
-
-## Command-line demo
-
-```bash
-go run . health
-go run . mails 5
-go run . unread
-go run . read 42
-go run . send examples/send.json
-go run . reply 42 "Thursday 2pm works for me."
-go run . draft examples/send.json
-go run . calendar 7
-go run . add examples/events.json
-go run . delete evt-1234abcd
-```
-
-## Tests
+## Test
 
 ```bash
 go test ./...
 ```
 
-The tests use fake IMAP, SMTP, and CalDAV servers (`testutil/`): no real account needed.
+No real account needed — everything runs against `testutil`'s fake servers.
