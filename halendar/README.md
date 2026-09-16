@@ -1,73 +1,73 @@
-# Halendar — modules mail et agenda
+# Halendar — mail and calendar modules
 
-Regroupe ce qu'on avait testé séparément (lecture IMAP, envoi SMTP, agenda CalDAV)
-en **deux modules Go réutilisables**, qui marchent de la même façon :
+Bundles what used to be tested separately (IMAP reading, SMTP sending, CalDAV calendar)
+into **two reusable Go packages** that work the same way:
 
 ```go
-envfile.Charger(".env")
+envfile.Load(".env")
 
-boite := mail.Nouveau(mail.ConfigDepuisEnv())       // ou mail.Config{...}
-ag    := agenda.Nouveau(agenda.ConfigDepuisEnv())   // ou agenda.Config{...}
+mailbox := mail.New(mail.ConfigFromEnv())       // or mail.Config{...}
+cal     := calendar.New(calendar.ConfigFromEnv()) // or calendar.Config{...}
 
-boite.Tester(ctx)
-ag.Tester(ctx)
+mailbox.Test(ctx)
+cal.Test(ctx)
 ```
 
-## Démarrer
+## Getting started
 
 ```bash
-cp .env.example .env    # identifiants du compte mail et de l'agenda
+cp .env.example .env    # credentials for the mail account and the calendar
 go mod tidy
-go run . sante
+go run . health
 ```
 
-## Module `mail`
+## Package `mail`
 
-| Fonction | Rôle |
+| Function | Role |
 |---|---|
-| `Derniers(ctx, n)` | n derniers mails (plus récent d'abord) |
-| `Nouveaux(ctx, dernierUID)` | mails arrivés depuis le dernier appel (renvoie le nouvel UID à garder) |
-| `Lire(ctx, uid)` | un mail : expéditeur, destinataires, texte, HTML, pièces jointes, lu/non lu |
-| `Rechercher(ctx, Recherche{...})` | non lus, expéditeur, sujet, contenu, dates |
-| `MarquerLu(ctx, lu, uids...)` | lu / non lu |
-| `Deplacer(ctx, dossier, uids...)` | ranger un mail |
-| `Dossiers(ctx)` · `Compter(ctx)` | dossiers du compte · nombre de mails |
-| `Envoyer(ctx, Envoi{...})` | à / cc / cci, texte et HTML optionnel |
-| `Repondre(ctx, message, texte)` | réponse dans le même fil (Re:, In-Reply-To, References) |
-| `ReponseA(message, texte)` | prépare une réponse sans l'envoyer |
-| `DeposerBrouillon(ctx, Envoi{...})` | dépose dans les Brouillons au lieu d'envoyer |
+| `Recent(ctx, n)` | n most recent mails (newest first) |
+| `NewSince(ctx, lastUID)` | mails received since the last call (returns the new UID to keep) |
+| `Read(ctx, uid)` | one mail: sender, recipients, text, HTML, attachments, read/unread |
+| `Search(ctx, SearchQuery{...})` | unread, sender, subject, contents, dates |
+| `MarkRead(ctx, read, uids...)` | read / unread |
+| `Move(ctx, folder, uids...)` | move a mail |
+| `Folders(ctx)` · `Count(ctx)` | the account's folders · number of mails |
+| `Send(ctx, Outgoing{...})` | to / cc / bcc, text and optional HTML |
+| `Reply(ctx, message, text)` | reply in the same thread (Re:, In-Reply-To, References) |
+| `ReplyTo(message, text)` | prepares a reply without sending it |
+| `SaveDraft(ctx, Outgoing{...})` | saves to Drafts instead of sending |
 
-## Module `agenda`
+## Package `calendar`
 
-| Fonction | Rôle |
+| Function | Role |
 |---|---|
-| `Agendas(ctx)` | noms des agendas (les « Rappels » sont ignorés) |
-| `Evenements(ctx, debut, fin)` | tous les RDV de la période, récurrences dépliées |
-| `Occupe(ctx, debut, fin)` | le créneau est-il pris ? et par quoi |
-| `Ajouter(ctx, Evenement{...})` | crée, ou met à jour si l'UID existe (statut confirme / provisoire / annule) |
-| `Supprimer(ctx, uid, agenda)` | supprime un RDV |
+| `Calendars(ctx)` | names of the calendars (task-only calendars like "Reminders" are skipped) |
+| `Events(ctx, start, end)` | every event in the period, recurring events expanded |
+| `Busy(ctx, start, end)` | is the slot taken? and by what |
+| `Add(ctx, Event{...})` | creates, or updates if the UID already exists (status confirmed / tentative / cancelled) |
+| `Delete(ctx, uid, calendar)` | deletes an event |
 
-`agenda.Evenement` se lit directement depuis du JSON :
+`calendar.Event` can be read directly from JSON:
 
 ```json
-{ "titre": "Pitch", "debut": "2026-09-18T09:00", "duree_minutes": 60, "statut": "provisoire" }
+{ "title": "Pitch", "start": "2026-09-18T09:00", "duration_minutes": 60, "status": "tentative" }
 ```
 
-(`"debut": "2026-09-19"` = journée entière ; `"fin"` à la place de `"duree_minutes"` ; `"fuseau"` optionnel.)
+(`"start": "2026-09-19"` means an all-day event; `"end"` can replace `"duration_minutes"`; `"timezone"` is optional.)
 
-## Démo en ligne de commande
+## Command-line demo
 
 ```bash
-go run . sante
+go run . health
 go run . mails 5
-go run . nonlus
-go run . lire 42
-go run . envoyer exemples/envoi.json
-go run . repondre 42 "Jeudi 14h me convient."
-go run . brouillon exemples/envoi.json
-go run . agenda 7
-go run . ajouter exemples/evenements.json
-go run . supprimer evt-1234abcd
+go run . unread
+go run . read 42
+go run . send examples/send.json
+go run . reply 42 "Thursday 2pm works for me."
+go run . draft examples/send.json
+go run . calendar 7
+go run . add examples/events.json
+go run . delete evt-1234abcd
 ```
 
 ## Tests
@@ -76,4 +76,4 @@ go run . supprimer evt-1234abcd
 go test ./...
 ```
 
-Les tests utilisent de faux serveurs IMAP, SMTP et CalDAV (`testutil/`) : aucun compte nécessaire.
+The tests use fake IMAP, SMTP, and CalDAV servers (`testutil/`): no real account needed.

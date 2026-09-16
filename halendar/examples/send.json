@@ -1,0 +1,6 @@
+{
+  "to": ["recipient@example.com"],
+  "cc": [],
+  "subject": "Halendar test",
+  "text": "Hello,\n\nThis is a send test.\n\nBest regards,"
+}
