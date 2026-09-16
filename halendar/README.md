@@ -24,10 +24,18 @@ go run . health          # confirms both connections work
 | `reply <uid> "text"` | replies in the same thread |
 | `draft send.json` | saves to Drafts instead of sending |
 | `calendar [days]` | upcoming schedule |
+| `busy <start> <end>` | checks whether a slot is free |
 | `add event.json` | adds or updates one or more events |
 | `delete <uid> [calendar]` | deletes an event |
+| `schedule <uid>` | books the first free slot proposed in a mail, replies confirming it |
 
 Sample payloads live in [`examples/`](examples/).
+
+`schedule` looks for lines like `2026-09-18 14:00-14:30` in the mail body, checks
+each against the calendar with `Busy`, books the first free one, and replies in
+the same thread with a plain confirmation message — no AI involved yet. That
+message is the one seam meant to be swapped out later for a backend-generated
+one, without touching the booking logic.
 
 ## Packages
 
