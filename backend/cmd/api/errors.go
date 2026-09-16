@@ -2,69 +2,96 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
-	"runtime/debug"
-	"strings"
-
-	"github.com/dariobaldi/halendar/internal/response"
-	"github.com/dariobaldi/halendar/internal/validator"
 )
 
-func (app *application) reportServerError(r *http.Request, err error) {
+func (app *app) logError(r *http.Request, err error) {
 	var (
-		message = err.Error()
-		method  = r.Method
-		url     = r.URL.String()
-		trace   = string(debug.Stack())
+		method = r.Method
+		uri    = r.URL.RequestURI()
 	)
 
-	requestAttrs := slog.Group("request", "method", method, "url", url)
-	app.logger.Error(message, requestAttrs, "trace", trace)
+	app.logger.Error(err.Error(), "method", method, "uri", uri)
 }
 
-func (app *application) errorMessage(w http.ResponseWriter, r *http.Request, status int, message string, headers http.Header) {
-	message = strings.ToUpper(message[:1]) + message[1:]
+func (app *app) errorResponse(w http.ResponseWriter, r *http.Request, status int, message any) {
+	env := envelope{"error": message}
 
-	err := response.JSONWithHeaders(w, status, map[string]string{"Error": message}, headers)
+	err := app.writeJSON(w, status, env, nil)
 	if err != nil {
-		app.reportServerError(r, err)
+		app.logError(r, err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 
-func (app *application) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	app.reportServerError(r, err)
-
-	message := "The server encountered a problem and could not process your request"
-	app.errorMessage(w, r, http.StatusInternalServerError, message, nil)
+func (app *app) serverErrorResponse(w http.ResponseWriter, r *http.Request, err error) {
+	app.logError(r, err)
+	message := "The server encountered a problem and could not process your request. Error: " + err.Error()
+	app.errorResponse(w, r, http.StatusInternalServerError, message)
 }
 
-func (app *application) notFound(w http.ResponseWriter, r *http.Request) {
+func (app *app) notFoundResponse(w http.ResponseWriter, r *http.Request) {
 	message := "The requested resource could not be found"
-	app.errorMessage(w, r, http.StatusNotFound, message, nil)
+	app.errorResponse(w, r, http.StatusNotFound, message)
 }
 
-func (app *application) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
+func (app *app) methodNotAllowedResponse(w http.ResponseWriter, r *http.Request) {
 	message := fmt.Sprintf("The %s method is not supported for this resource", r.Method)
-	app.errorMessage(w, r, http.StatusMethodNotAllowed, message, nil)
+	app.errorResponse(w, r, http.StatusMethodNotAllowed, message)
 }
 
-func (app *application) badRequest(w http.ResponseWriter, r *http.Request, err error) {
-	app.errorMessage(w, r, http.StatusBadRequest, err.Error(), nil)
+func (app *app) failedValidationResponse(w http.ResponseWriter, r *http.Request, errors map[string]string) {
+	app.errorResponse(w, r, http.StatusUnprocessableEntity, errors)
 }
 
-func (app *application) failedValidation(w http.ResponseWriter, r *http.Request, v validator.Validator) {
-	err := response.JSON(w, http.StatusUnprocessableEntity, v)
-	if err != nil {
-		app.serverError(w, r, err)
-	}
+func (app *app) editConflictResponse(w http.ResponseWriter, r *http.Request) {
+	message := "unable to update record due to an edit conflict, please try again"
+	app.errorResponse(w, r, http.StatusConflict, message)
 }
 
-func (app *application) basicAuthenticationRequired(w http.ResponseWriter, r *http.Request) {
-	headers := make(http.Header)
-	headers.Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
+func (app *app) rateLimitExceededResponse(w http.ResponseWriter, r *http.Request) {
+	message := "rate limit exceeded"
+	app.errorResponse(w, r, http.StatusTooManyRequests, message)
+}
 
-	message := "You must be authenticated to access this resource"
-	app.errorMessage(w, r, http.StatusUnauthorized, message, headers)
+func (app *app) badRequestResponse(w http.ResponseWriter, r *http.Request, err error) {
+	app.logError(r, err)
+	app.errorResponse(w, r, http.StatusBadRequest, err.Error())
+}
+
+func (app *app) invalidCredentialsResponse(w http.ResponseWriter, r *http.Request) {
+	message := "les identifiants ne sont pas valides"
+	app.errorResponse(w, r, http.StatusUnauthorized, message)
+}
+
+func (app *app) invalidAuthenticationTokenResponse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("WWW-Authenticate", "Bearer")
+
+	message := "invalid or missing authentication token"
+	app.errorResponse(w, r, http.StatusForbidden, message)
+}
+
+func (app *app) authenticationRequiredResponse(w http.ResponseWriter, r *http.Request) {
+	message := "you must be authenticated to access this resource"
+	app.errorResponse(w, r, http.StatusUnauthorized, message)
+}
+
+func (app *app) inactiveAccountResponse(w http.ResponseWriter, r *http.Request) {
+	message := "your user account must be activated to access this resource"
+	app.errorResponse(w, r, http.StatusForbidden, message)
+}
+
+func (app *app) notPermittedResponse(w http.ResponseWriter, r *http.Request) {
+	message := "your user account does not have the necessary permissions to access this resource"
+	app.errorResponse(w, r, http.StatusForbidden, message)
+}
+
+func (app *app) outsideWorkingHoursResponse(w http.ResponseWriter, r *http.Request) {
+	message := "le serveur n'est pas disponible en dehors des heures de travail"
+	app.errorResponse(w, r, http.StatusTeapot, message)
+}
+
+func (app *app) unsupportedFileResponse(w http.ResponseWriter, r *http.Request) {
+	message := "unsupported file type"
+	app.errorResponse(w, r, http.StatusBadRequest, message)
 }

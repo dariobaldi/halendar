@@ -1,0 +1,9 @@
+# Set the email address that should be used to contact you if there is a problem with 
+# your TLS certificates.
+{
+  email your@email.com
+}
+
+backend.domain.com {
+  reverse_proxy localhost:4000
+}

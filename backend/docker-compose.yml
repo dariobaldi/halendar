@@ -1,0 +1,50 @@
+services:
+  halendar-api:
+    depends_on:
+      - postgres
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: halendar-api
+    ports:
+      - "127.0.0.1:4355:4354"
+    env_file:
+      - .env
+    volumes:
+      - halendar-api:/app/data
+    restart: always
+
+  postgres:
+    image: postgres:15.5
+    restart: always
+    container_name: halendar-postgres
+    shm_size: '2gb'
+    ports:
+      - "127.0.0.1:5433:5432"
+    env_file:
+      - .env
+    volumes:
+      - halendar-db:/var/lib/postgresql/data
+      - config_files:/etc/postgresql/
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+  
+  adminer:
+    image: adminer:latest
+    container_name: halendar-adminer
+    restart: always
+    ports:
+      - 8088:8080
+
+networks:
+  mynet:
+    driver: bridge
+
+volumes:
+  halendar-db:
+    external: true
+  
+  halendar-api:
+    external: true
+
+  config_files:
+    external: true

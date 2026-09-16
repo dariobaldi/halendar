@@ -1,0 +1,39 @@
+{{define "subject"}}Bienvenu.e sur Halendar!{{end}}
+
+{{define "plainBody"}}
+Salut!
+
+Un compte vient d'être créé pour vous sur Halendar.
+
+Pour l'activer, cliquer sur le lien suivant:
+
+(lien pas disponible) {"token": "{{.activationToken}}"}  {"userID": "{{.userID}}"}
+
+Merci,
+L'Equipe Halendar
+{{end}}
+
+{{define "htmlBody"}}
+<!doctype html>
+<html>
+
+<head>
+  <meta name="viewport" content="width=device-width" />
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+</head>
+
+<body>
+  <p>Salut {{.Name}}!</p>
+  <br>
+  <p>Un compte vient d'être créé pour vous sur Halendar.</p>
+  <br>
+  <p>Pour l'activer, cliquer sur le lien suivant:</p>
+  <br>
+  <p>(lien pas disponible) {"token": "{{.activationToken}}"} {"userID": "{{.userID}}"}</p>
+  <br>
+  <p>Merci,</p>
+  <p>L'Equipe Halendar</p>
+</body>
+
+</html>
+{{end}}

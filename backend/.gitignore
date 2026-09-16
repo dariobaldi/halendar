@@ -1,2 +1,11 @@
-tmp/
-build-errors.log
+.env
+data/*
+.VSCodeCounter/*
+bin/*
+hide_-*
+remote/production/Caddyfile
+remote/production/api.service
+*.dump
+backup/*
+42colis.db
+.DS_Store

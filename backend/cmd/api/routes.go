@@ -6,15 +6,33 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-func (app *application) routes() http.Handler {
-	mux := httprouter.New()
+const (
+	UserLevel  = 1
+	MidLevel   = 5
+	AdminLevel = 10
+	DevLevel   = 100
+)
 
-	mux.NotFound = http.HandlerFunc(app.notFound)
-	mux.MethodNotAllowed = http.HandlerFunc(app.methodNotAllowed)
+func (app *app) routes() http.Handler {
+	router := httprouter.New()
+	router.NotFound = http.HandlerFunc(app.notFoundResponse)
+	router.MethodNotAllowed = http.HandlerFunc(app.methodNotAllowedResponse)
 
-	mux.HandlerFunc("GET", "/status", app.status)
+	// Admin
+	router.HandlerFunc(http.MethodGet, "/v1/healthcheck", app.healthcheckHandler)
+	router.HandlerFunc(http.MethodGet, "/v1/requests_stats", app.requirePermission(AdminLevel, app.requestsStatsHandler))
+	
+	// Users
+	router.HandlerFunc(http.MethodGet, "/v1/users", app.requirePermission(AdminLevel, app.getUsersHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/users", app.requirePermission(AdminLevel, app.registerUserHandler))
+	router.HandlerFunc(http.MethodPatch, "/v1/user", app.requirePermission(AdminLevel, app.updateUserHandler))
+	router.HandlerFunc(http.MethodPut, "/v1/users/activate", app.requirePermission(AdminLevel, app.activateUserHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/users/authentication", app.createAuthenticationToken)
+	router.HandlerFunc(http.MethodPost, "/v1/users/change_password", app.requirePermission(UserLevel, app.changePasswordHandler))
 
-	mux.Handler("GET", "/restricted-basic-auth", app.requireBasicAuthentication(http.HandlerFunc(app.restricted)))
+	// Websocket
+	router.HandlerFunc(http.MethodPost, "/v1/websocket/token", app.requirePermission(UserLevel, app.createWsToken))
+	router.HandlerFunc(http.MethodGet, "/v1/ws/:channel/:token", app.WebSocketHandler)
 
-	return app.logRequest(app.recoverPanic(mux))
+	return app.recoverPanic(app.enableCORS(app.rateLimit(app.authenticate(app.requestsSlog(router)))))
 }

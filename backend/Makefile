@@ -1,107 +1,212 @@
-# ==================================================================================== #
-# HELPERS
-# ==================================================================================== #
+include .env
 
-## help: print this help message
+# ============================================================================= #
+# HELPERS	  																	#
+# ============================================================================= #
 .PHONY: help
 help:
-	@echo 'Usage:'
-	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /'
+	@echo '*** Commands:'
+	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' | sed -e 's/^/ /'
 
+.PHONY: ignored
+ignored:
+	@clear
+	@echo "*** Ignored files ***\n"
+	@git status --ignored --short | grep '!! ' | sed 's/!! //g'
+	@echo
 
-# ==================================================================================== #
-# QUALITY CONTROL
-# ==================================================================================== #
+.PHONY: confirm
+confirm:
+	@echo "Are you sure? [y/N] " && read ans && [ $${ans:-N} = y ]
 
-## audit: run quality control checks
+# ============================================================================= #
+# DEVELOPMENT  																	#
+# ============================================================================= #
+
+## api/up: Update Docker image
+.PHONY: api/up
+api/up: build/api
+	@docker context use default
+	@echo '*** Building Docker Container'
+	@docker-compose up -d --no-deps --build halendar-api
+
+# ============================================================================= #
+# MIGRATIONS 																	#
+# ============================================================================= #
+
+## migrate/create name=**** : Create a new database migration
+.PHONY: migrate/create
+migrate/create: confirm
+	@migrate create -seq -ext sql -dir=./migrations ${name}
+
+## migrate/up: Run database migrations
+.PHONY: migrate/up
+migrate/up: confirm
+	@echo 'Running up migrations...'
+	@migrate -source file://migrations -database ${DB_DSN_DEV} up
+
+## migrate/fill: run the sql fill info file
+.PHONY: migrate/fill
+migrate/fill: migrate/up
+	@PGPASSWORD=${POSTGRES_PASSWORD} psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -f ./sql_commands/hide_-fill_info.sql
+
+## migrate/down: Rollback database migrations by 1 step
+.PHONY: migrate/down
+migrate/down: 
+	@echo 'Running down migrations...'
+	@migrate -source file://migrations -database ${DB_DSN_DEV} down
+
+## migrate/goto version=####: Rollback database migrations to a specific version
+.PHONY: migrate/goto
+migrate/goto: confirm
+	@echo 'Running up migrations...'
+	@migrate -source file://migrations -database ${DB_DSN_DEV} goto ${version}
+
+## migrate/force version=#### : Force database migrations to a specific version
+.PHONY: migrate/force
+migrate/force: confirm
+	@echo 'Running up migrations...'
+	@migrate -source file://migrations -database ${DB_DSN_DEV} force ${version}
+
+# ============================================================================= #
+# QUALITY CONTROL																#
+# ============================================================================= #
+
+## audit: Tidy dependencies and format, vet and test all code
 .PHONY: audit
-audit: test
-	go mod tidy -diff
-	go mod verify
-	test -z "$(shell gofmt -l .)" 
-	go vet ./...
-	go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+audit: tidy
+	@echo '*** Formatting code'
+	go fmt ./...
+	@echo '*** Check vulnerabilities'
+	govulncheck ./...
+	@echo '*** Vetting code'
+	staticcheck ./...
+	@echo '*** Running tests'
+	go test -race -vet=off ./...
 
-## test: run all tests
-.PHONY: test
-test:
-	go test -v -race -buildvcs ./...
-
-## test/cover: run all tests and display coverage
-.PHONY: test/cover
-test/cover:
-	go test -v -race -buildvcs -coverprofile=/tmp/coverage.out ./...
-	go tool cover -html=/tmp/coverage.out
-
-## upgradeable: list direct dependencies that have upgrades available
-.PHONY: upgradeable
-upgradeable:
-	go run github.com/oligot/go-mod-upgrade@latest
-
-
-# ==================================================================================== #
-# DEVELOPMENT
-# ==================================================================================== #
-
-## tidy: tidy modfiles and format .go files
+## tidy: Tidy and vendor dependencies
 .PHONY: tidy
 tidy:
-	go mod tidy -v
-	go fix ./...
-	go fmt ./...
+	@echo '*** Tidying and verifying module dependencies'
+	go mod tidy
+	go mod verify
+	# @echo '*** Vendoring dependencies'
+	# go mod vendor
 
-## build: build the cmd/api application
-.PHONY: build
-build:
-	go build -o=/tmp/bin/api ./cmd/api
-	
-## run: run the cmd/api application
-.PHONY: run
-run: build
-	/tmp/bin/api
 
-## run/live: run the application with reloading on file changes
-.PHONY: run/live
-run/live:
-	go run github.com/cosmtrek/air@v1.43.0 \
-		--build.cmd "make build" --build.bin "/tmp/bin/api" --build.delay "100" \
-		--build.exclude_dir "" \
-		--build.include_ext "go, tpl, tmpl, html, css, scss, js, ts, sql, jpeg, jpg, gif, png, bmp, svg, webp, ico" \
-		--misc.clean_on_exit "true"
+# ============================================================================= #
+# BUILD																			#
+# ============================================================================= #
 
+## build/api: Build the binary for the API server (Linux)
+.PHONY: build/api
+build/api:
+	@echo '*** Building API binary'
+	@timestamp=$$(date "+%Y-%m-%dT%H:%M:%S"); \
+	GOOS=linux GOARCH=amd64 \
+	go build -ldflags="-s -X main.buildTimestamp=$$timestamp" -o bin/linux_amd64/api ./cmd/api/
 
 # ==================================================================================== #
-# SQL MIGRATIONS
+# PRODUCTION
 # ==================================================================================== #
 
-## migrations/new name=$1: create a new database migration
-.PHONY: migrations/new
-migrations/new:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest create -seq -ext=.sql -dir=./assets/migrations ${name}
+## connect: connect to the production server
+.PHONY: connect
+connect:
+	@ssh ${USER}@${HOST_IP}
 
-## migrations/up: apply all up database migrations
-.PHONY: migrations/up
-migrations/up:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" up
+## connect/root: connect to the production server as root user
+.PHONY: connect/root
+connect/root:
+	@ssh root@${HOST_IP}
 
-## migrations/down: apply all down database migrations
-.PHONY: migrations/down
-migrations/down:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" down
+## deploy/setup: install dependencies
+.PHONY: deploy/setup
+deploy/setup:
+	@rsync -rP --delete ./remote/setup root@${HOST_IP}:/root
+	@rsync -P .env root@${HOST_IP}:/root/setup/
+	@ssh -t root@${HOST_IP} "bash /root/setup/01.sh"
+	@rsync -P ./remote/production/Caddyfile ${USER}@${HOST_IP}:~
+	@ssh -t ${USER}@${HOST_IP} '\
+		sudo mv ~/Caddyfile /etc/caddy/ \
+		&& sudo systemctl reload caddy \
+	'
 
-## migrations/goto version=$1: migrate to a specific version number
-.PHONY: migrations/goto
-migrations/goto:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" goto ${version}
+## deploy: deploy just the api executable
+.PHONY: deploy
+deploy: confirm
+	@echo '*** Building API binary'
+	GOOS=linux GOARCH=amd64 go build -ldflags=${linker_flags} -o bin/linux_amd64/api ./cmd/api/
+	@docker context use remote
+	@echo '*** Building Docker Container'
+	@docker-compose up -d --no-deps --build halendar-api
+	@docker context use default
 
-## migrations/force version=$1: force database migration
-.PHONY: migrations/force
-migrations/force:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" force ${version}
+## deploy/restart: fully restart the docker container
+.PHONY: deploy/restart
+deploy/restart: confirm
+	@docker context use remote
+	@docker-compose down
+	@docker-compose up -d
+	@docker context use default
 
-## migrations/version: print the current in-use migration version
-.PHONY: migrations/version
-migrations/version:
-	go run -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path=./assets/migrations -database="postgres://${DB_DSN}" version
+## db/backup: back-up production database
+.PHONY: db/backup
+db/backup:
+	@echo '=> Creating db dump'
+	@ssh ${USER}@${HOST_IP} rm -f ./db.dump
+	@ssh ${USER}@${HOST_IP} docker exec postgres rm -f ./db.dump
+	@ssh ${USER}@${HOST_IP} docker exec postgres pg_dump -U ${POSTGRES_USER} -d ${DATABASE_NAME} -F c -b -v -f ./db.dump
+	@ssh ${USER}@${HOST_IP} docker cp postgres:/db.dump ./db.dump
+	@echo '=> Importing db dump'
+	@rm -f ./db.dump
+	@scp ${USER}@${HOST_IP}:/home/${USER}/db.dump ./db.dump
+	@echo '=> DB downloaded'
 
+
+## db/import: import local db dump to postgres container
+.PHONY: db/import
+db/import: db/backup
+	@echo '=> Importing db dump'
+	@docker context use default
+	@docker exec postgres rm -f ./db.dump
+	@docker cp ./db.dump postgres:/db.dump
+	@docker exec -i postgres pg_restore -c -U ${POSTGRES_USER} -d ${DATABASE_NAME} ./db.dump
+	@echo '=> DB updated locally'
+	@docker exec -i postgres psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -c "UPDATE accounts SET import_status=false AND import_products=false"
+
+## db/config/local: update config file in local docker volume
+.PHONY: db/config/local
+db/config/local:
+	@echo '=> Updating Config File locally'
+	@docker cp ./postgresql.conf postgres:/etc/postgresql/postgresql.conf
+	@docker-compose up -d --no-deps --build postgres
+
+## db/config: update config file in docker volume
+.PHONY: db/config
+db/config:
+	@echo '=> Updating Config File'
+	@rsync -avz ./postgresql.conf halendar@51.89.150.207:~/postgresql.conf
+	@ssh ${USER}@${HOST_IP} docker cp ./postgresql.conf postgres:/etc/postgresql/postgresql.conf
+	@docker context use remote
+	@docker-compose up -d --no-deps --build postgres
+	@docker context use default
+
+## frontend/version version=X.X.X: update production frontend version
+.PHONY: frontend/version
+frontend/version:
+	@echo '=> Importing db dump'
+	@docker context use remote
+	@docker exec -i postgres psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -c "INSERT INTO app_version (frontend) VALUES ('${version}')"
+	@docker exec -i postgres psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -c "REFRESH MATERIALIZED VIEW CONCURRENTLY dashboard_summary"
+	@docker context use default
+
+## apply: run new config
+.PHONY: apply
+apply:
+	@echo '*** Building API binary'
+	GOOS=linux GOARCH=amd64 go build -ldflags=${linker_flags} -o bin/linux_amd64/api ./cmd/api/
+	@docker context use remote
+	@echo '*** Building Docker Container'
+	@docker-compose up -d
+	@docker context use default
