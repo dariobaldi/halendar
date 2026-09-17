@@ -385,11 +385,20 @@ class _ProposalCardState extends State<ProposalCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LaButton(
-          label: 'Send',
-          icon: const Icon(Icons.send),
-          fullWidth: true,
-          onPressed: _confirmSend,
+        // A fullWidth button stretches to match the card, which is fine in
+        // the narrower grid view but reads as an oversized bar in the
+        // wider single-column list view -- cap it instead of letting it
+        // track the card's width.
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: LaButton(
+              label: 'Send',
+              icon: const Icon(Icons.send),
+              fullWidth: true,
+              onPressed: _confirmSend,
+            ),
+          ),
         ),
         const SizedBox(height: LaSpacing.x3xs),
         Row(
