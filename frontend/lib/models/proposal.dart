@@ -54,4 +54,54 @@ class Proposal {
   });
 
   bool get hasFreeSlot => selectedSlot != null;
+
+  factory Proposal.fromJson(Map<String, dynamic> json) {
+    final slots = (json['slots'] as List<dynamic>? ?? [])
+        .map((s) => TimeSlot.fromJson(s as Map<String, dynamic>))
+        .toList();
+
+    // The backend leaves selected_slot_id unset until the user actively picks a
+    // slot different from the one it auto-selected -- the same default (first free
+    // slot) applies here so the UI shows a sensible pick from the start.
+    final selectedSlotId = json['selected_slot_id'] as String?;
+    TimeSlot? selectedSlot;
+    if (selectedSlotId != null) {
+      for (final s in slots) {
+        if (s.id == selectedSlotId) {
+          selectedSlot = s;
+          break;
+        }
+      }
+    } else {
+      for (final s in slots) {
+        if (s.isFree) {
+          selectedSlot = s;
+          break;
+        }
+      }
+    }
+
+    return Proposal(
+      id: json['id'] as String,
+      senderName: (json['sender_name'] as String?)?.trim().isNotEmpty == true
+          ? json['sender_name'] as String
+          : (json['sender_email'] as String),
+      senderEmail: json['sender_email'] as String,
+      subject: (json['subject'] as String?)?.isNotEmpty == true
+          ? json['subject'] as String
+          : '(no subject)',
+      receivedAt: DateTime.parse(json['received_at']).toLocal(),
+      emailExcerpt: json['email_excerpt'] as String? ?? '',
+      slots: slots,
+      selectedSlot: selectedSlot,
+      needsManualReview: json['needs_manual_review'] as bool? ?? false,
+      responseDraft: json['response_draft'] as String? ?? '',
+      draftEditedByUser: json['draft_edited_by_user'] as bool? ?? false,
+      status: switch (json['status']) {
+        'confirmed' => ProposalStatus.confirmed,
+        'rejected' => ProposalStatus.rejected,
+        _ => ProposalStatus.pending,
+      },
+    );
+  }
 }

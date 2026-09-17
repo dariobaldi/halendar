@@ -112,6 +112,10 @@ func (f fakeCalendarSource) Busy(ctx context.Context, start, end time.Time) (boo
 
 func (f fakeCalendarSource) Timezone() *time.Location { return f.loc }
 
+func (f fakeCalendarSource) AddEvent(ctx context.Context, title, location, description string, start, end time.Time) error {
+	return nil
+}
+
 func TestFindAlternativeSlots(t *testing.T) {
 	loc := time.UTC
 	monday := time.Date(2026, 9, 21, 10, 0, 0, 0, loc) // confirmed Monday

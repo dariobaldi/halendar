@@ -21,22 +21,27 @@ class ProposalsListScreen extends StatelessWidget {
             title: const Text('Proposals'),
             actions: const [ThemeToggleButton()],
           ),
-          body: proposals.isEmpty
-              ? const _EmptyState()
-              : ListView.separated(
-                  padding: const EdgeInsets.all(LaSpacing.base),
-                  itemCount: proposals.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: LaSpacing.sm),
-                  itemBuilder: (context, index) {
-                    final proposal = proposals[index];
-                    return ProposalCard(
-                      key: ValueKey(proposal.id),
-                      proposal: proposal,
-                      store: store,
-                      initiallyExpanded: index == 0,
-                    );
-                  },
+          body: store.fetching && proposals.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: store.fetch,
+                  child: proposals.isEmpty
+                      ? const _EmptyState()
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(LaSpacing.base),
+                          itemCount: proposals.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: LaSpacing.sm),
+                          itemBuilder: (context, index) {
+                            final proposal = proposals[index];
+                            return ProposalCard(
+                              key: ValueKey(proposal.id),
+                              proposal: proposal,
+                              store: store,
+                              initiallyExpanded: index == 0,
+                            );
+                          },
+                        ),
                 ),
         );
       },
@@ -50,36 +55,44 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.laColors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(LaSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.inbox_outlined,
-              size: 48,
-              color: colors.contentNeutralTertiary,
-            ),
-            const SizedBox(height: LaSpacing.sm),
-            Text(
-              'No proposals pending',
-              style: LaTextStyles.labelLg.copyWith(
-                color: colors.contentNeutralPrimary,
-              ),
-            ),
-            const SizedBox(height: LaSpacing.x2xs),
-            Text(
-              'New meeting requests detected in your emails will appear '
-              'here.',
-              textAlign: TextAlign.center,
-              style: LaTextStyles.bodySm.copyWith(
+    // A plain Center isn't scrollable, so the ancestor RefreshIndicator's pull
+    // gesture would never register -- ListView + AlwaysScrollableScrollPhysics
+    // keeps pull-to-refresh working even with nothing to show yet.
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: LaSpacing.lg,
+            vertical: LaSpacing.xl,
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.inbox_outlined,
+                size: 48,
                 color: colors.contentNeutralTertiary,
               ),
-            ),
-          ],
+              const SizedBox(height: LaSpacing.sm),
+              Text(
+                'No proposals pending',
+                style: LaTextStyles.labelLg.copyWith(
+                  color: colors.contentNeutralPrimary,
+                ),
+              ),
+              const SizedBox(height: LaSpacing.x2xs),
+              Text(
+                'New meeting requests detected in your emails will appear '
+                'here.',
+                textAlign: TextAlign.center,
+                style: LaTextStyles.bodySm.copyWith(
+                  color: colors.contentNeutralTertiary,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

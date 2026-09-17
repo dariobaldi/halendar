@@ -22,52 +22,64 @@ class HistoryScreen extends StatelessWidget {
             title: const Text('History'),
             actions: const [ThemeToggleButton()],
           ),
-          body: proposals.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(LaSpacing.lg),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.history,
-                          size: 48,
-                          color: colors.contentNeutralTertiary,
+          body: store.fetching && proposals.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: store.fetch,
+                  child: proposals.isEmpty
+                      ? ListView(
+                          // Plain Center isn't scrollable, so the pull gesture
+                          // above would never register with nothing to show yet.
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: LaSpacing.lg,
+                                vertical: LaSpacing.xl,
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.history,
+                                    size: 48,
+                                    color: colors.contentNeutralTertiary,
+                                  ),
+                                  const SizedBox(height: LaSpacing.sm),
+                                  Text(
+                                    'No history yet',
+                                    style: LaTextStyles.labelLg.copyWith(
+                                      color: colors.contentNeutralPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: LaSpacing.x2xs),
+                                  Text(
+                                    'Confirmed or deleted proposals appear here.',
+                                    textAlign: TextAlign.center,
+                                    style: LaTextStyles.bodySm.copyWith(
+                                      color: colors.contentNeutralTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(LaSpacing.base),
+                          itemCount: proposals.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: LaSpacing.sm),
+                          itemBuilder: (context, index) {
+                            final proposal = proposals[index];
+                            return ProposalCard(
+                              key: ValueKey(proposal.id),
+                              proposal: proposal,
+                              store: store,
+                              readOnly: true,
+                              initiallyExpanded: index == 0,
+                            );
+                          },
                         ),
-                        const SizedBox(height: LaSpacing.sm),
-                        Text(
-                          'No history yet',
-                          style: LaTextStyles.labelLg.copyWith(
-                            color: colors.contentNeutralPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: LaSpacing.x2xs),
-                        Text(
-                          'Confirmed or deleted proposals appear here.',
-                          textAlign: TextAlign.center,
-                          style: LaTextStyles.bodySm.copyWith(
-                            color: colors.contentNeutralTertiary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.all(LaSpacing.base),
-                  itemCount: proposals.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: LaSpacing.sm),
-                  itemBuilder: (context, index) {
-                    final proposal = proposals[index];
-                    return ProposalCard(
-                      key: ValueKey(proposal.id),
-                      proposal: proposal,
-                      store: store,
-                      readOnly: true,
-                      initiallyExpanded: index == 0,
-                    );
-                  },
                 ),
         );
       },

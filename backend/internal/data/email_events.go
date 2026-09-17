@@ -26,8 +26,9 @@ const (
 
 // Response kinds for an EmailMessageEvent, once its slots have been checked.
 const (
-	ResponseKindAccept  = "accept"
-	ResponseKindDecline = "decline"
+	ResponseKindAccept    = "accept"
+	ResponseKindDecline   = "decline"
+	ResponseKindOpenEnded = "open_ended" // asked to participate, but named no specific time to accept or decline
 )
 
 // EmailEventSlot is one candidate date/time, either proposed by the sender or
@@ -73,6 +74,9 @@ func (m EmailEventModel) Upsert(event *EmailMessageEvent) error {
 	}
 	defer tx.Rollback()
 
+	// response_kind/response_draft are only overwritten by a fresh analysis when the
+	// user hasn't hand-edited the draft yet -- otherwise re-analysis (e.g. after
+	// improving the prompt) would silently clobber their own wording.
 	query := `
 		INSERT INTO email_message_events (email_message_id, title, location, needs_manual_review, response_kind, response_draft)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -80,8 +84,8 @@ func (m EmailEventModel) Upsert(event *EmailMessageEvent) error {
 			title = EXCLUDED.title,
 			location = EXCLUDED.location,
 			needs_manual_review = EXCLUDED.needs_manual_review,
-			response_kind = EXCLUDED.response_kind,
-			response_draft = EXCLUDED.response_draft
+			response_kind = CASE WHEN email_message_events.draft_edited_by_user THEN email_message_events.response_kind ELSE EXCLUDED.response_kind END,
+			response_draft = CASE WHEN email_message_events.draft_edited_by_user THEN email_message_events.response_draft ELSE EXCLUDED.response_draft END
 		RETURNING id, created_at
 	`
 	err = tx.QueryRowContext(ctx, query,

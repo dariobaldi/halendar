@@ -273,9 +273,7 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 			NeedsManualReview: len(slots) == 0, // asked to participate, but no usable time could be pinned down
 			Slots:             slots,
 		}
-		if len(slots) > 0 {
-			app.draftEventReply(ctx, userID, calSource, loc, msg, &event)
-		}
+		app.draftEventReply(ctx, userID, calSource, loc, msg, &event)
 		if err := app.models.EmailEvents.Upsert(&event); err != nil {
 			app.logger.Error("email analysis: storing extracted event: " + err.Error())
 		}
@@ -478,10 +476,19 @@ func (app *app) draftEventReply(ctx context.Context, userID uuid.UUID, source ca
 
 	var outcome string
 	kind := data.ResponseKindDecline
-	if accepted := firstFreeSlot(event.Slots); accepted != nil {
+	accepted := firstFreeSlot(event.Slots)
+	switch {
+	case len(event.Slots) == 0:
+		// Asked to participate, but no usable date/time could be pinned down at all --
+		// nothing to accept or decline, just ask the sender to suggest times.
+		kind = data.ResponseKindOpenEnded
+		outcome = fmt.Sprintf("%s would like to participate but no specific time was mentioned. Ask the sender to suggest some times that work for them.", user.Name)
+
+	case accepted != nil:
 		kind = data.ResponseKindAccept
 		outcome = fmt.Sprintf("%s is available at %s and confirms this works.", user.Name, formatSlot(*accepted, loc))
-	} else {
+
+	default:
 		proposed := formatSlotList(event.Slots, loc) // all sender-proposed at this point, no alternatives added yet
 		alternatives := app.findAlternativeSlots(ctx, source, loc, event.Slots)
 		event.Slots = append(event.Slots, alternatives...)

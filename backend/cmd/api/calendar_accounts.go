@@ -242,6 +242,11 @@ func (s caldavSource) Busy(ctx context.Context, start, end time.Time) (bool, err
 	return busy, err
 }
 
+func (s caldavSource) AddEvent(ctx context.Context, title, location, description string, start, end time.Time) error {
+	_, err := s.client.Add(ctx, calendar.Event{Title: title, Location: location, Description: description, Start: start, End: end})
+	return err
+}
+
 func (s caldavSource) Timezone() *time.Location { return s.client.Timezone() }
 
 // calendarSourceFor builds a calendarimport.Source for a connected calendar account,

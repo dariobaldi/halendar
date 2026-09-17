@@ -67,6 +67,15 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/calendar-accounts/caldav", app.requirePermission(UserLevel, app.connectCaldavCalendarHandler))
 	router.HandlerFunc(http.MethodDelete, "/v1/calendar-accounts/:id", app.requirePermission(UserLevel, app.deleteCalendarAccountHandler))
 
+	// Proposals: the extracted-event review screen (email + slots + calendar
+	// availability + drafted reply). Sending/booking isn't wired up yet -- confirm
+	// and reject just move a proposal to "history" for now.
+	router.HandlerFunc(http.MethodGet, "/v1/proposals", app.requirePermission(UserLevel, app.listProposalsHandler))
+	router.HandlerFunc(http.MethodPatch, "/v1/proposals/:id/slot", app.requirePermission(UserLevel, app.selectProposalSlotHandler))
+	router.HandlerFunc(http.MethodPatch, "/v1/proposals/:id/draft", app.requirePermission(UserLevel, app.updateProposalDraftHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/proposals/:id/confirm", app.requirePermission(UserLevel, app.confirmProposalHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/proposals/:id/reject", app.requirePermission(UserLevel, app.rejectProposalHandler))
+
 	// Calendar
 	router.HandlerFunc(http.MethodGet, "/v1/calendar/health", app.requirePermission(UserLevel, app.calendarHealthHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/calendar/calendars", app.requirePermission(UserLevel, app.listCalendarsHandler))

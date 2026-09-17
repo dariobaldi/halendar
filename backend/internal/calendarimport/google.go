@@ -162,6 +162,44 @@ func (s *googleSource) Busy(ctx context.Context, start, end time.Time) (bool, er
 	return len(out.Calendars["primary"].Busy) > 0, nil
 }
 
+// AddEvent creates an event on the account's primary calendar.
+func (s *googleSource) AddEvent(ctx context.Context, title, location, description string, start, end time.Time) error {
+	body := map[string]any{
+		"summary": title,
+		"start":   map[string]string{"dateTime": start.Format(time.RFC3339)},
+		"end":     map[string]string{"dateTime": end.Format(time.RFC3339)},
+	}
+	if location != "" {
+		body["location"] = location
+	}
+	if description != "" {
+		body["description"] = description
+	}
+	reqBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.googleapis.com/calendar/v3/calendars/primary/events", bytes.NewReader(reqBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("google calendar: creating event: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("google calendar: creating event: %s: %s", resp.Status, respBody)
+	}
+	return nil
+}
+
 // Timezone returns the account's configured calendar timezone, falling back to
 // Europe/Paris (matching the rest of the app's default) if it can't be read.
 func (s *googleSource) Timezone() *time.Location {

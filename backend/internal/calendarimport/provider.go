@@ -23,12 +23,16 @@ type Token struct {
 	RefreshToken string
 }
 
-// Source is the minimal interface the email-analysis pipeline needs from a connected
-// calendar, regardless of provider.
+// Source is the interface the email pipeline needs from a connected calendar,
+// regardless of provider: checking availability while drafting a reply, and booking
+// the event for real once the user confirms.
 type Source interface {
 	// Busy reports whether [start, end] overlaps an existing event.
 	Busy(ctx context.Context, start, end time.Time) (bool, error)
 	Timezone() *time.Location
+
+	// AddEvent creates a new event. location and description may be empty.
+	AddEvent(ctx context.Context, title, location, description string, start, end time.Time) error
 }
 
 // Provider is one OAuth2-based way of connecting and reading a calendar.

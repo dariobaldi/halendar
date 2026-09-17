@@ -21,6 +21,18 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _store.init();
+  }
+
+  @override
+  void dispose() {
+    _store.end();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final screens = [
       ProposalsListScreen(store: _store),

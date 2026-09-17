@@ -78,9 +78,16 @@ class TimeSlotRow extends StatelessWidget {
                         ),
                         const SizedBox(height: LaSpacing.x4xs),
                         Text(
-                          slot.isFree
-                              ? formatTimeRange(slot.start, slot.end)
-                              : '${formatTimeRange(slot.start, slot.end)} · Busy',
+                          switch (slot.availability) {
+                            SlotAvailability.free => formatTimeRange(
+                              slot.start,
+                              slot.end,
+                            ),
+                            SlotAvailability.busy =>
+                              '${formatTimeRange(slot.start, slot.end)} · Busy',
+                            SlotAvailability.unknown =>
+                              '${formatTimeRange(slot.start, slot.end)} · Availability unknown',
+                          },
                           style: LaTextStyles.bodySm.copyWith(
                             color: colors.contentNeutralTertiary,
                           ),
