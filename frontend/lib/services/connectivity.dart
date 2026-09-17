@@ -55,7 +55,7 @@ class _NetworkAwareWidgetState extends State<NetworkAwareWidget> {
               padding: const EdgeInsets.all(8.0),
               child: Chip(
                 label: Text(
-                  'Déconnecté du serveur',
+                  'Disconnected from server',
                   style: TextStyle(fontSize: 18),
                 ),
                 backgroundColor: Colors.red,

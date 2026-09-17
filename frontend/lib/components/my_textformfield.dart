@@ -33,7 +33,7 @@ class MyTextFormField extends StatelessWidget {
           child: TextFormField(
             validator: validator?? (value) {
                   if (value == null || value.isEmpty) {
-                    return 'La valeur ne peux pas être vide';
+                    return 'This value cannot be empty';
                   }
                   return null;
                 },

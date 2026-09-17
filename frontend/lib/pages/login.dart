@@ -37,14 +37,14 @@ class _LoginMenuSPage extends State<LoginPage> {
     final password = passwordController.text;
 
     int responseCode;
-    String errorMessage = 'Identifiants non valides';
+    String errorMessage = 'Invalid credentials';
 
     try {
       responseCode = await AuthService.instance
           .authenticate(username, password)
           .timeout(const Duration(seconds: 3));
     } catch (_) {
-      errorMessage = 'Le serveur ne répond pas';
+      errorMessage = 'The server is not responding';
       responseCode = 408;
     }
 
@@ -88,7 +88,7 @@ class _LoginMenuSPage extends State<LoginPage> {
           children: [
             MyTextFormField(
               controller: usernameController,
-              lableText: 'Pseudo',
+              lableText: 'Username',
               obscureText: false,
               onEnter: signUserIn,
               hints: const [AutofillHints.username, AutofillHints.email],
@@ -99,7 +99,7 @@ class _LoginMenuSPage extends State<LoginPage> {
             // password input
             MyTextFormField(
               controller: passwordController,
-              lableText: 'Mot de passe',
+              lableText: 'Password',
               obscureText: !showPassword,
               onEnter: signUserIn,
               hints: const [AutofillHints.password],
@@ -119,7 +119,7 @@ class _LoginMenuSPage extends State<LoginPage> {
             const SizedBox(height: 20),
             // login button
             LaButton(
-              label: 'Se Connecter',
+              label: 'Sign In',
               fullWidth: true,
               onPressed: () => signUserIn(context),
             ),

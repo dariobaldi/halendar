@@ -40,11 +40,11 @@ class _InsertUserState extends State<InsertUser> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 15),
-                Align(child: Text("Ajouter un utilisateur")),
+                Align(child: Text("Add a user")),
                 const SizedBox(height: 10),
                 MyTextFormField(
                   controller: _name,
-                  lableText: "Nom",
+                  lableText: "Name",
                   onEnter: (context) {
                     _username.text = _name.text.replaceAll(" ", "_").toLowerCase();
                   },
@@ -55,7 +55,7 @@ class _InsertUserState extends State<InsertUser> {
                 const SizedBox(height: 10),
                 MyTextFormField(
                   controller: _username,
-                  lableText: "Pseudo",
+                  lableText: "Username",
                   onEnter: (context) {
                     _username.text = _username.text.replaceAll(" ", "_").toLowerCase();
                   },
@@ -66,7 +66,7 @@ class _InsertUserState extends State<InsertUser> {
                 const SizedBox(height: 5),
                   MyTextFormField(
                     controller: _password,
-                    lableText: 'Mot de passe',
+                    lableText: 'Password',
                     obscureText: !showPassword,
                     onEnter: (context){},
                     hints: const [AutofillHints.password],
@@ -81,7 +81,7 @@ class _InsertUserState extends State<InsertUser> {
                         onPressed: () {
                           Navigator.of(context).pop();
                         },
-                        label: const Text("Annuler"),
+                        label: const Text("Cancel"),
                       ),
                       ActionChip(
                         onPressed: () {
@@ -90,7 +90,7 @@ class _InsertUserState extends State<InsertUser> {
                           registerUser(user, _password.text);
                           Navigator.of(context).pop();
                         },
-                        label: const Text("Enregistrer"),
+                        label: const Text("Save"),
                       ),
                     ],
                   ),

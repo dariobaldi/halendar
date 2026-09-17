@@ -38,14 +38,14 @@ Widget accessLevelIcon(int level) {
 
 String accessLevelName(int level) {
   if (level < 5) {
-    return "Employé-e";
+    return "Employee";
   } else if (level <= 5) {
-    return "Responsable";
+    return "Manager";
   } else if (level <= 10) {
     return "Admin";
   } else if (level <= 100) {
     return "Dev";
   } else {
-    return "Inconnu";
+    return "Unknown";
   }
 }

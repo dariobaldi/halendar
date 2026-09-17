@@ -78,7 +78,7 @@ func (m UserModel) GetList(userID uuid.UUID, filter string) ([]*User, error) {
 		SELECT
 			id,
 			CASE
-				WHEN id = $1 THEN 'moi-même'
+				WHEN id = $1 THEN 'myself'
 			ELSE
 				name
 			END AS name

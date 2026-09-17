@@ -15,14 +15,14 @@ class UsersPage extends StatelessWidget {
       builder:
           (context) => AlertDialog(
             title: Text(
-              "${user.activated ? "Désactiver" : "Activer"} le compte de ${user.name} ?",
+              "${user.activated ? "Deactivate" : "Activate"} ${user.name}'s account?",
             ),
             actions: [
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
-                child: const Text("Annuler"),
+                child: const Text("Cancel"),
               ),
               TextButton(
                 onPressed:
@@ -33,7 +33,7 @@ class UsersPage extends StatelessWidget {
                           activateUser(user);
                           Navigator.of(context).pop();
                         },
-                child: const Text("Enregistrer"),
+                child: const Text("Save"),
               ),
             ],
           ),
@@ -45,10 +45,10 @@ class UsersPage extends StatelessWidget {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: Text("Changer le niveau d'accès"),
+            title: Text("Change access level"),
             content:
                 (AuthService.instance.accessLevel <= user.accessLevel)
-                    ? Text("Indisponible")
+                    ? Text("Unavailable")
                     : Column(
                       spacing: 5,
                       mainAxisSize: MainAxisSize.min,
@@ -63,7 +63,7 @@ class UsersPage extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
-                child: const Text("Annuler"),
+                child: const Text("Cancel"),
               ),
             ],
           ),
@@ -74,7 +74,7 @@ class UsersPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Utilisateurs"),
+        title: Text("Users"),
         actions: [
           ElevatedButton(
             onPressed: () {
@@ -121,7 +121,7 @@ class UsersPage extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            m.users[index].activated ? "Active" : "Désactivé",
+                            m.users[index].activated ? "Active" : "Inactive",
                           ),
                           Icon(
                             Icons.circle,

@@ -120,8 +120,8 @@ Future<void> activateUser(User user) async {
     );
     if (response.statusCode != 200) {
       addNotification(
-        title: "Erreur",
-        content: "Erreur: ${response.body}",
+        title: "Error",
+        content: "Error: ${response.body}",
         type: "error",
       );
     }
@@ -145,8 +145,8 @@ Future<void> changeUserLevel(User user, int level) async {
     );
     if (response.statusCode != 200) {
       addNotification(
-        title: "Erreur",
-        content: "Erreur: ${response.body}",
+        title: "Error",
+        content: "Error: ${response.body}",
         type: "error",
       );
     }
@@ -175,8 +175,8 @@ Future<void> registerUser(User user, String password) async {
     );
     if (response.statusCode != 202) {
       addNotification(
-        title: "Erreur",
-        content: "Erreur: ${response.body}",
+        title: "Error",
+        content: "Error: ${response.body}",
         type: "error",
       );
     }

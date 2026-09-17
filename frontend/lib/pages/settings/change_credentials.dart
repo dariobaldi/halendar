@@ -40,7 +40,7 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
       if (response.statusCode == 201) {
         AuthService.instance.logOut();
         addNotification(
-          title: "Le mot de passe a été changé",
+          title: "Password changed",
           content: "",
           type: "success",
           duration: 3,
@@ -48,8 +48,8 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
         return;
       } else {
         addNotification(
-          title: "Erreur",
-          content: "Erreur: ${response.body}",
+          title: "Error",
+          content: "Error: ${response.body}",
           type: "error",
         );
       }
@@ -82,7 +82,7 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
                 ],
               ),
               const Text(
-                "Changer les identifiants",
+                "Change credentials",
                 style: TextStyle(fontSize: 20),
               ),
               const SizedBox(height: 15),
@@ -91,7 +91,7 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
                 children: [
                   MyTextFormField(
                     controller: _oldPassword,
-                    lableText: 'Ancien',
+                    lableText: 'Current',
                     obscureText: !_showOld,
                     onEnter: submitForm,
                     hints: const [AutofillHints.password],
@@ -117,15 +117,15 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
                 children: [
                   MyTextFormField(
                     controller: _newPassword,
-                    lableText: 'Nouveau',
+                    lableText: 'New',
                     obscureText: !_showNew,
                     onEnter: submitForm,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'La valeur ne peux pas être vide';
+                        return 'This value cannot be empty';
                       }
                       if (value.length < 8 || value.length > 72) {
-                        return 'Le mot de passe doit avoir entre 8 et 72 charactères';
+                        return 'The password must be between 8 and 72 characters';
                       }
                       return null;
                     },
@@ -151,15 +151,15 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
                 children: [
                   MyTextFormField(
                     controller: _newPasswordDuplicate,
-                    lableText: 'Vérif nouveau',
+                    lableText: 'Confirm new',
                     obscureText: !_showNewDuplcate,
                     onEnter: submitForm,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'La valeur ne peux pas être vide';
+                        return 'This value cannot be empty';
                       }
                       if (_newPassword.text != _newPasswordDuplicate.text) {
-                        return 'Le mot de passe n\'est pas le même';
+                        return 'The passwords do not match';
                       }
                       return null;
                     },
@@ -184,7 +184,7 @@ class _ChangeCredentialsPageState extends State<ChangeCredentialsPage> {
                 onPressed: () {
                   submitForm(context);
                 },
-                child: const Text('Mettre à jour'),
+                child: const Text('Update'),
               ),
             ],
           ),

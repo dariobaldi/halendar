@@ -1,16 +1,16 @@
-{{define "subject"}}Bienvenu.e sur Halendar!{{end}}
+{{define "subject"}}Welcome to Halendar!{{end}}
 
 {{define "plainBody"}}
-Salut!
+Hi!
 
-Un compte vient d'être créé pour vous sur Halendar.
+An account was just created for you on Halendar.
 
-Pour l'activer, cliquer sur le lien suivant:
+To activate it, click the following link:
 
-(lien pas disponible) {"token": "{{.activationToken}}"}  {"userID": "{{.userID}}"}
+(link not available) {"token": "{{.activationToken}}"}  {"userID": "{{.userID}}"}
 
-Merci,
-L'Equipe Halendar
+Thanks,
+The Halendar Team
 {{end}}
 
 {{define "htmlBody"}}
@@ -23,16 +23,16 @@ L'Equipe Halendar
 </head>
 
 <body>
-  <p>Salut {{.Name}}!</p>
+  <p>Hi {{.Name}}!</p>
   <br>
-  <p>Un compte vient d'être créé pour vous sur Halendar.</p>
+  <p>An account was just created for you on Halendar.</p>
   <br>
-  <p>Pour l'activer, cliquer sur le lien suivant:</p>
+  <p>To activate it, click the following link:</p>
   <br>
-  <p>(lien pas disponible) {"token": "{{.activationToken}}"} {"userID": "{{.userID}}"}</p>
+  <p>(link not available) {"token": "{{.activationToken}}"} {"userID": "{{.userID}}"}</p>
   <br>
-  <p>Merci,</p>
-  <p>L'Equipe Halendar</p>
+  <p>Thanks,</p>
+  <p>The Halendar Team</p>
 </body>
 
 </html>
