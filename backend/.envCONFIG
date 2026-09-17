@@ -47,8 +47,11 @@ CALDAV_TIMEZONE=Europe/Paris
 # Local LLM (docker-compose "ollama" service, not reachable outside the compose
 # network). Pulled automatically on first start if not already in the volume.
 # gemma3:1b is the lightest/fastest option; 4b/12b/27b trade download size and
-# inference time for better instruction-following (worth it for the structured JSON
-# extraction email analysis relies on -- 1b tends to produce malformed output).
+# inference time for potentially better instruction-following. 1b's malformed-JSON
+# problem turned out to be mostly a sampling issue (email analysis now calls Ollama
+# with temperature 0 -- see GenerateDeterministic in internal/ollama) rather than a
+# hard model-size limitation; a bigger model may still help with the date-arithmetic
+# and false-positive cases documented on eventExtractionPromptTmpl, if revisited.
 # OLLAMA_BASE_URL defaults to the in-network service address and normally
 # doesn't need to be set; override it only when running the API outside compose.
 OLLAMA_MODEL=gemma3:1b

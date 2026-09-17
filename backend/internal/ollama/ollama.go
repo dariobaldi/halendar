@@ -33,9 +33,14 @@ func New(baseURL, model string) *Client {
 func (c *Client) Model() string { return c.model }
 
 type generateRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
+	Model   string           `json:"model"`
+	Prompt  string           `json:"prompt"`
+	Stream  bool             `json:"stream"`
+	Options *generateOptions `json:"options,omitempty"`
+}
+
+type generateOptions struct {
+	Temperature float64 `json:"temperature"`
 }
 
 type generateResponse struct {
@@ -43,9 +48,23 @@ type generateResponse struct {
 	Error    string `json:"error"`
 }
 
-// Generate sends prompt to the model and returns its full (non-streamed) response text.
+// Generate sends prompt to the model and returns its full (non-streamed) response
+// text, using the model's default sampling.
 func (c *Client) Generate(ctx context.Context, prompt string) (string, error) {
-	body, err := json.Marshal(generateRequest{Model: c.model, Prompt: prompt, Stream: false})
+	return c.generate(ctx, prompt, nil)
+}
+
+// GenerateDeterministic is like Generate but disables sampling (temperature 0).
+// Prompt-tuning found this makes a real difference for gemma3:1b on tasks that need
+// consistent, well-formed output -- both stricter JSON compliance for extraction and
+// more reliable instruction-following (no sign-off, matching the original language)
+// for the reply draft -- rather than the varied phrasing normal sampling gives.
+func (c *Client) GenerateDeterministic(ctx context.Context, prompt string) (string, error) {
+	return c.generate(ctx, prompt, &generateOptions{Temperature: 0})
+}
+
+func (c *Client) generate(ctx context.Context, prompt string, options *generateOptions) (string, error) {
+	body, err := json.Marshal(generateRequest{Model: c.model, Prompt: prompt, Stream: false, Options: options})
 	if err != nil {
 		return "", err
 	}

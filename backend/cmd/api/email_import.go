@@ -201,14 +201,33 @@ func snippet(text string) string {
 // automated notification, none of which call for a reply -- and if so, to extract
 // every candidate date/time proposed. The reference date lets it resolve relative
 // phrasing ("next Tuesday", "tomorrow afternoon") against when the mail arrived.
-const eventExtractionPromptTmpl = `You are screening one email received by our user on %s (YYYY-MM-DD, this is "today" for resolving relative dates).
+//
+// Tuned against gemma3:1b with a small suite of representative emails (see the now-
+// deleted cmd/prompttest harness -- git history has it if this needs revisiting): a
+// worked weekday-math example and two few-shot examples (one accept, one reject)
+// measurably improved both classification accuracy and JSON validity over a plainer
+// version of these instructions. Generated with GenerateDeterministic (temperature 0)
+// -- for this small a model, disabling sampling made a bigger difference than any
+// further prompt wording, fixing most malformed-JSON responses outright.
+const eventExtractionPromptTmpl = `You are screening one email received by our user. Today's date is %s (YYYY-MM-DD).
 
-Decide whether the SENDER is inviting or asking OUR USER (the reader, "you") to participate in a meeting, call, or event. This is NOT the case when the sender is only mentioning an event they themselves are attending, describing something that already happened, or sending a newsletter/automated notice -- only a genuine ask for the reader to attend or schedule something counts.
+Weekday math example: if today is Monday 2026-09-14, then "tomorrow" = 2026-09-15, "Thursday" or "next Thursday" = 2026-09-17, "next Monday" = 2026-09-21. Always count forward from today.
 
-If, and only if, that's the case, extract every candidate date/time the sender proposed or asked about, resolving relative dates using the reference date above. If the sender asks an open question with no explicit date/time ("when are you free?"), leave "slots" empty.
+TASK 1 -- decide requests_participation: true only if the SENDER is personally asking OUR USER (the reader, "you") to attend or schedule a meeting/call/event with them. Answer false for: the sender merely mentioning an event they themselves are attending, a newsletter, marketing email, or automated notification -- even if it contains dates or invites you to "join" a broadcast/webinar.
 
-Respond with ONLY this JSON object and nothing else -- no explanation, no markdown fences:
-{"requests_participation": true, "title": "short event title, or empty string", "location": "place or link mentioned, or empty string", "slots": [{"date": "YYYY-MM-DD", "start": "HH:MM", "end": "HH:MM"}]}
+TASK 2 -- only if requests_participation is true, extract every candidate date/time the sender proposed, resolving relative dates against today's date. Each slot needs a "date" and a "start" time. Only set "end" if the sender stated an explicit end time or duration; otherwise omit "end" entirely (do not guess or repeat the start time). If the sender asks an open question with no explicit date/time ("when are you free?"), leave "slots" as an empty array.
+
+Respond with ONLY a single JSON object, nothing before or after it -- no markdown fences, no comments, no explanation. Use real values, never the literal example text.
+
+Example 1 (genuine request, today=2026-09-14):
+Email: "Can we do a 30 min call tomorrow at 3pm about the budget?"
+{"requests_participation": true, "title": "Budget call", "location": "", "slots": [{"date": "2026-09-15", "start": "15:00", "end": "15:30"}]}
+
+Example 2 (not a request -- newsletter):
+Email: "Join our free webinar next Tuesday at 2pm! Register now."
+{"requests_participation": false, "title": "", "location": "", "slots": []}
+
+Now analyze this email:
 
 Subject: %s
 
@@ -250,7 +269,7 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 		referenceDate = time.Now()
 	}
 	prompt := fmt.Sprintf(eventExtractionPromptTmpl, referenceDate.Format("2006-01-02"), msg.Subject, body)
-	response, err := app.ollama.Generate(ctx, prompt)
+	response, err := app.ollama.GenerateDeterministic(ctx, prompt)
 	if err != nil {
 		if setErr := app.models.EmailMessages.SetAnalysisError(msg.ID, err); setErr != nil {
 			app.logger.Error("email analysis: recording error: " + setErr.Error())
@@ -483,19 +502,52 @@ const (
 	maxAlternatives       = 3
 )
 
+// detectLanguagePromptTmpl asks the model to name the email's language, so
+// replyPromptTmpl can be told explicitly rather than asked to infer "the same
+// language as the original" itself. Prompt-tuning found the small model reliably
+// matches the source language when told outright, but frequently defaults to English
+// when left to infer it, even from otherwise-clear non-English text.
+const detectLanguagePromptTmpl = `What language is the following text written in? Respond with ONLY the English name of the language (e.g. English, French, Spanish), nothing else.
+
+Text:
+"""
+%s
+"""`
+
+// detectLanguage returns the model's best guess at text's language as an English
+// name (e.g. "French"), or "the original email's language" if detection fails --
+// still a valid, if less reliable, instruction for replyPromptTmpl to follow.
+func (app *app) detectLanguage(ctx context.Context, text string) string {
+	prompt := fmt.Sprintf(detectLanguagePromptTmpl, text)
+	response, err := app.ollama.GenerateDeterministic(ctx, prompt)
+	if err != nil {
+		app.logger.Error("detect language: " + err.Error())
+		return "the original email's language"
+	}
+	return strings.TrimSpace(response)
+}
+
 // replyPromptTmpl asks the local model to write the reply's body text. The actual
 // decision (accept/decline, which slot, which alternatives) is made in Go from real
 // calendar data beforehand -- the model only handles phrasing, which is far more
 // reliable for a small local model than trusting it to reason about availability
 // itself. The signature is appended separately in Go, guaranteed present regardless
 // of whether the model follows the instruction not to sign.
-const replyPromptTmpl = `You are the Halendar Assistant, an AI scheduling assistant writing an email on %s's behalf, replying to a message about "%s".
-
-Write the reply in the same language as the original email below. Make it clear in the body that you (the Halendar Assistant) are writing on %s's behalf, not %s personally -- for example "%s asked me to let you know...". Keep it short and polite. Do not sign or sign off the email yourself -- a signature is added automatically afterwards.
+//
+// Tuned alongside eventExtractionPromptTmpl (see its comment): explicit rules and
+// brevity fixed the model routinely signing off despite being told not to, and
+// naming the language explicitly (via detectLanguage) fixed it defaulting to English
+// for non-English originals. Generated with GenerateDeterministic for the same
+// consistency reasons as the extraction prompt.
+const replyPromptTmpl = `You are the Halendar Assistant, an AI scheduling assistant writing an email on %s's behalf, replying to a message about "%s". The original email is in %s -- write your reply in %s too.
 
 %s
 
-Respond with ONLY the email body text -- no subject line, no signature, no explanation, no markdown.
+Rules:
+- Make clear you're writing on %s's behalf, not as %s -- start with something like "%s asked me to let you know...".
+- Keep it to 2-3 short sentences.
+- Do NOT end with a sign-off, closing phrase, or name (no "Best,", "Regards,", "Sincerely," "Cheers," or similar, and no name on its own line) -- one is appended automatically after your text.
+- Output ONLY the email body -- no subject line, no markdown, no explanation.
 
 Original email:
 """
@@ -545,8 +597,9 @@ func (app *app) draftEventReply(ctx context.Context, userID uuid.UUID, source ca
 		}
 	}
 
-	prompt := fmt.Sprintf(replyPromptTmpl, user.Name, msg.Subject, user.Name, user.Name, user.Name, outcome, msg.Body)
-	response, err := app.ollama.Generate(ctx, prompt)
+	language := app.detectLanguage(ctx, msg.Body)
+	prompt := fmt.Sprintf(replyPromptTmpl, user.Name, msg.Subject, language, language, outcome, user.Name, user.Name, user.Name, msg.Body)
+	response, err := app.ollama.GenerateDeterministic(ctx, prompt)
 	if err != nil {
 		app.logger.Error("draft reply: generating: " + err.Error())
 		return
