@@ -34,7 +34,11 @@ func (m *Mailbox) withSession(folder string, readOnly bool, fn func(c *imapclien
 	}
 	defer client.Close()
 
-	if err := client.Login(m.cfg.User, m.cfg.Pass).Wait(); err != nil {
+	if m.cfg.OAuth2Token != "" {
+		if err := client.Authenticate(NewXOAuth2Client(m.cfg.User, m.cfg.OAuth2Token)); err != nil {
+			return fmt.Errorf("IMAP: OAuth2 authentication refused (is the token expired?): %w", err)
+		}
+	} else if err := client.Login(m.cfg.User, m.cfg.Pass).Wait(); err != nil {
 		return fmt.Errorf("IMAP: login refused (is it an app password?): %w", err)
 	}
 

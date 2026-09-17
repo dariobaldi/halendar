@@ -29,6 +29,12 @@ type Config struct {
 	User string // account address
 	Pass string // password (an app password for Gmail, iCloud, Yahoo, ...)
 	From string // display sender, e.g. "Halendar Team <me@gmail.com>" (defaults to User)
+
+	// OAuth2Token, when set, is used instead of Pass: the IMAP/SMTP session
+	// authenticates as User with this bearer access token (OAUTHBEARER/XOAUTH2)
+	// rather than a password. Callers are responsible for refreshing it before
+	// each use -- a Mailbox does not renew it itself.
+	OAuth2Token string
 }
 
 // ConfigFromEnv reads MAIL_* from the environment (after envfile.Load(".env")).
@@ -55,7 +61,7 @@ func (c Config) Missing() []string {
 	if c.User == "" {
 		missing = append(missing, "MAIL_USER")
 	}
-	if c.Pass == "" {
+	if c.Pass == "" && c.OAuth2Token == "" {
 		missing = append(missing, "MAIL_PASS")
 	}
 	return missing

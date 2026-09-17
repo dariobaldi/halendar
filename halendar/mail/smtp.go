@@ -99,10 +99,15 @@ func (m *Mailbox) smtpClient() (*smtp.Client, error) {
 		}
 	}
 	if ok, _ := client.Extension("AUTH"); ok {
-		auth := smtp.PlainAuth("", m.cfg.User, m.cfg.Pass, m.cfg.SMTPHost)
+		var auth smtp.Auth
+		if m.cfg.OAuth2Token != "" {
+			auth = xoauth2SMTPAuth{user: m.cfg.User, token: m.cfg.OAuth2Token}
+		} else {
+			auth = smtp.PlainAuth("", m.cfg.User, m.cfg.Pass, m.cfg.SMTPHost)
+		}
 		if err := client.Auth(auth); err != nil {
 			client.Close()
-			return nil, fmt.Errorf("SMTP: authentication refused (is it an app password?): %w", err)
+			return nil, fmt.Errorf("SMTP: authentication refused (is it an app password or an expired token?): %w", err)
 		}
 	}
 	return client, nil
