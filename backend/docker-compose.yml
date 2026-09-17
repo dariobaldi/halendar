@@ -19,9 +19,11 @@ services:
     image: ollama/ollama:latest
     container_name: halendar-ollama
     restart: always
-    # No "ports:" mapping: like postgres, it is reachable only from other
-    # containers on the compose network (as "http://ollama:11434"), never
-    # from the host or the outside world.
+    # Loopback-only, like postgres' 5433 mapping below: reachable from this
+    # host (e.g. an API run natively with `go run` for local dev, outside
+    # this compose network) but never from outside it.
+    ports:
+      - "127.0.0.1:11434:11434"
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:1b}

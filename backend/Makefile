@@ -30,6 +30,11 @@ api/up: build/api
 	@echo '*** Building Docker Container'
 	@docker-compose up -d --no-deps --build halendar-api
 
+## bootstrap-admin: create the first user (full admin rights) on a fresh database
+.PHONY: bootstrap-admin
+bootstrap-admin:
+	@go run ./cmd/bootstrap
+
 # ============================================================================= #
 # MIGRATIONS 																	#
 # ============================================================================= #

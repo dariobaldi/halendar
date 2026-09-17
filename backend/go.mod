@@ -12,6 +12,7 @@ require (
 	github.com/tomasen/realip v0.0.0-20180522021738-f0c99a92ddce
 	golang.org/x/crypto v0.54.0
 	golang.org/x/oauth2 v0.37.0
+	golang.org/x/term v0.46.0
 	golang.org/x/time v0.15.0
 	halendar v0.0.0
 )
@@ -26,6 +27,7 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/emersion/go-webdav v0.7.0 // indirect
 	github.com/teambition/rrule-go v1.8.2 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
