@@ -53,6 +53,9 @@ func (cfg *config) GetVariables() {
 	// which Anthropic account or plan owns the key, just which model it's billed to.
 	cfg.claude.model = getEnvString("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
+	// Same idea for a user's own Gemini API key (see internal/gemini).
+	cfg.gemini.model = getEnvString("GEMINI_MODEL", "gemini-3.6-flash")
+
 	cfg.push.projectID = getEnvString("FCM_PROJECT_ID", "")
 	cfg.push.serviceAccountFile = getEnvString("FCM_SERVICE_ACCOUNT_FILE", "")
 

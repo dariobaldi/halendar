@@ -65,6 +65,10 @@ OLLAMA_BASE_URL=http://ollama:11434
 # background bulk-classification job Ollama otherwise handles.
 CLAUDE_MODEL=claude-haiku-4-5-20251001
 
+# Same idea for a user's own Gemini API key (internal/gemini) -- an alternative to
+# Claude, not a dependency on it; a user can connect either, both, or neither.
+GEMINI_MODEL=gemini-3.6-flash
+
 # Push notifications (Firebase Cloud Messaging). FCM_SERVICE_ACCOUNT_FILE is a path
 # to the JSON key downloaded from Firebase Console > Project Settings > Service
 # Accounts > Generate new private key. Without these, /v1/push/* endpoints return

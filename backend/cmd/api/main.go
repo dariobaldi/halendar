@@ -63,6 +63,9 @@ type config struct {
 	claude struct {
 		model string // which Claude model a user's own API key is sent to, see internal/claude
 	}
+	gemini struct {
+		model string // which Gemini model a user's own API key is sent to, see internal/gemini
+	}
 	push struct {
 		projectID          string
 		serviceAccountFile string

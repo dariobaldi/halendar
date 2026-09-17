@@ -4,10 +4,43 @@ import 'package:provider/provider.dart';
 
 import '../../models/ai_settings.dart';
 
-/// Lets the user connect their own Claude API key and choose whether email analysis
-/// uses it instead of the shared local Ollama instance. Connecting a key doesn't by
-/// itself switch anything over -- the switch only takes effect (and can only be
-/// turned on) once a key is on file.
+/// One key-bearing provider's connect/disconnect UI can register with this so the
+/// screen knows its display name, key-field hint, and API console link -- adding a
+/// third provider later is a matter of one more entry here, not a new screen.
+class _ProviderInfo {
+  final String id;
+  final String label;
+  final String keyLabel;
+  final String keyHint;
+
+  const _ProviderInfo({
+    required this.id,
+    required this.label,
+    required this.keyLabel,
+    required this.keyHint,
+  });
+}
+
+const _providers = [
+  _ProviderInfo(
+    id: 'claude',
+    label: 'Claude',
+    keyLabel: 'Anthropic API key',
+    keyHint: 'sk-ant-...',
+  ),
+  _ProviderInfo(
+    id: 'gemini',
+    label: 'Gemini',
+    keyLabel: 'Google AI API key',
+    keyHint: 'AIza...',
+  ),
+];
+
+/// Lets the user connect their own Claude and/or Gemini API key and choose which
+/// model (those, or the shared local Ollama instance) email analysis uses. Connecting
+/// a key doesn't by itself switch anything over -- a provider can only be selected
+/// once a key is on file for it, and a user can hold keys for more than one at a time
+/// and switch freely between them.
 class AISettingsScreen extends StatelessWidget {
   const AISettingsScreen({super.key});
 
@@ -20,68 +53,97 @@ class AISettingsScreen extends StatelessWidget {
   }
 }
 
-class _AISettingsView extends StatefulWidget {
-  const _AISettingsView();
+/// A single, tappable option row for choosing the active provider -- a plain
+/// `Material` + `InkWell` rather than `RadioListTile`, matching TimeSlotRow's own
+/// reasoning (see its doc comment): full-row hover/selected fill, not just around a
+/// tiny control, and no dependency on RadioListTile's now-deprecated
+/// groupValue/onChanged API.
+class _SelectableProviderTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _SelectableProviderTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
-  State<_AISettingsView> createState() => _AISettingsViewState();
-}
+  Widget build(BuildContext context) {
+    final colors = context.laColors;
+    final enabled = onTap != null;
 
-class _AISettingsViewState extends State<_AISettingsView> {
-  final _apiKeyController = TextEditingController();
-  bool _editingKey = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _apiKeyController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _connect() async {
-    final apiKey = _apiKeyController.text.trim();
-    if (apiKey.isEmpty) return;
-    setState(() => _error = null);
-    final error = await context.read<AISettingsModel>().connectClaude(apiKey);
-    if (!mounted) return;
-    if (error == null) {
-      _apiKeyController.clear();
-      setState(() => _editingKey = false);
-    } else {
-      setState(() => _error = error);
-    }
-  }
-
-  Future<void> _confirmDisconnect() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Disconnect Claude?'),
-        content: const Text(
-          'Email analysis will go back to using the local model. You can '
-          'reconnect a key at any time.',
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: colors.backgroundBrandTertiaryHover,
+        splashColor: colors.backgroundBrandSecondary,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: LaSpacing.sm,
+            vertical: LaSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: selected
+                    ? colors.contentBrandPrimary
+                    : colors.contentNeutralTertiary,
+                size: 22,
+              ),
+              const SizedBox(width: LaSpacing.sm),
+              Icon(
+                icon,
+                color: enabled
+                    ? colors.contentNeutralSecondary
+                    : colors.contentNeutralTertiary,
+              ),
+              const SizedBox(width: LaSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: LaTextStyles.labelMd.copyWith(
+                        color: enabled
+                            ? colors.contentNeutralPrimary
+                            : colors.contentNeutralTertiary,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: LaTextStyles.bodySm.copyWith(
+                        color: colors.contentNeutralTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Disconnect'),
-          ),
-        ],
       ),
     );
-    if (confirmed == true && mounted) {
-      await context.read<AISettingsModel>().disconnectClaude();
-    }
   }
+}
 
-  Future<void> _toggleActive(bool useClaude) async {
+class _AISettingsView extends StatelessWidget {
+  const _AISettingsView();
+
+  Future<void> _selectProvider(BuildContext context, String provider) async {
     final model = context.read<AISettingsModel>();
-    final error = await model.setProvider(useClaude ? 'claude' : 'ollama');
-    if (error != null && mounted) {
+    final error = await model.setProvider(provider);
+    if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
     }
   }
@@ -101,133 +163,215 @@ class _AISettingsViewState extends State<_AISettingsView> {
               children: [
                 Text(
                   'By default, Halendar analyzes your email with a local model '
-                  'running on our server. Connect your own Claude API key to use '
-                  'it instead -- useful if the local model\'s results aren\'t '
-                  'reliable enough for you.',
+                  'running on our server. Connect your own Claude or Gemini API '
+                  'key to use it instead -- useful if the local model\'s results '
+                  'aren\'t reliable enough for you.',
                   style: LaTextStyles.bodySm.copyWith(
                     color: colors.contentNeutralSecondary,
                   ),
                 ),
                 const SizedBox(height: LaSpacing.base),
                 Card(
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: Icon(
-                          Icons.auto_awesome,
-                          color: settings.hasApiKey
-                              ? colors.contentNeutralSecondary
-                              : colors.contentNeutralTertiary,
-                        ),
-                        title: const Text('Claude'),
-                        subtitle: Text(
-                          settings.hasApiKey
-                              ? 'API key connected'
-                              : 'No API key connected',
-                        ),
-                        trailing: settings.hasApiKey
-                            ? IconButton(
-                                icon: const Icon(Icons.link_off),
-                                tooltip: 'Disconnect',
-                                onPressed: model.busy
-                                    ? null
-                                    : _confirmDisconnect,
-                              )
-                            : null,
-                      ),
-                      if (settings.hasApiKey) ...[
-                        Divider(height: 1, color: colors.borderSurfacePrimary),
-                        ListTile(
-                          leading: Icon(
-                            Icons.smart_toy_outlined,
-                            color: colors.contentNeutralSecondary,
-                          ),
-                          title: const Text('Use Claude for analysis'),
-                          subtitle: Text(
-                            settings.isClaudeActive
-                                ? 'Active -- new mail is analyzed with Claude'
-                                : 'Off -- new mail is analyzed with the local model',
-                          ),
-                          trailing: LaSwitch(
-                            value: settings.isClaudeActive,
-                            onChanged: model.busy ? null : _toggleActive,
-                          ),
-                        ),
-                      ],
-                    ],
+                  child: _SelectableProviderTile(
+                    icon: Icons.dns_outlined,
+                    title: 'Local model',
+                    subtitle: 'Runs on our server, no setup needed',
+                    selected: settings.provider == 'ollama',
+                    onTap: model.busy
+                        ? null
+                        : () => _selectProvider(context, 'ollama'),
                   ),
                 ),
-                if (!settings.hasApiKey) ...[
-                  const SizedBox(height: LaSpacing.base),
-                  if (!_editingKey)
-                    FilledButton.icon(
-                      onPressed: () => setState(() => _editingKey = true),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Connect Claude API key'),
-                    )
-                  else
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(LaSpacing.base),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextFormField(
-                              controller: _apiKeyController,
-                              autofocus: true,
-                              obscureText: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Anthropic API key',
-                                hintText: 'sk-ant-...',
-                                border: OutlineInputBorder(),
-                              ),
-                              onFieldSubmitted: (_) => _connect(),
-                            ),
-                            if (_error != null) ...[
-                              const SizedBox(height: LaSpacing.sm),
-                              Text(
-                                _error!,
-                                style: LaTextStyles.bodySm.copyWith(
-                                  color: colors.contentErrorPrimary,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: LaSpacing.sm),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                TextButton(
-                                  onPressed: model.busy
-                                      ? null
-                                      : () => setState(() {
-                                          _editingKey = false;
-                                          _error = null;
-                                          _apiKeyController.clear();
-                                        }),
-                                  child: const Text('Cancel'),
-                                ),
-                                const SizedBox(width: LaSpacing.x2xs),
-                                FilledButton(
-                                  onPressed: model.busy ? null : _connect,
-                                  child: model.busy
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Text('Connect'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                for (final provider in _providers) ...[
+                  const SizedBox(height: LaSpacing.sm),
+                  _ProviderCard(provider: provider),
                 ],
               ],
             ),
+    );
+  }
+}
+
+class _ProviderCard extends StatefulWidget {
+  final _ProviderInfo provider;
+
+  const _ProviderCard({required this.provider});
+
+  @override
+  State<_ProviderCard> createState() => _ProviderCardState();
+}
+
+class _ProviderCardState extends State<_ProviderCard> {
+  final _apiKeyController = TextEditingController();
+  bool _editingKey = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _connect() async {
+    final apiKey = _apiKeyController.text.trim();
+    if (apiKey.isEmpty) return;
+    setState(() => _error = null);
+    final error = await context.read<AISettingsModel>().connectKey(
+      widget.provider.id,
+      apiKey,
+    );
+    if (!mounted) return;
+    if (error == null) {
+      _apiKeyController.clear();
+      setState(() => _editingKey = false);
+    } else {
+      setState(() => _error = error);
+    }
+  }
+
+  Future<void> _confirmDisconnect() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Disconnect ${widget.provider.label}?'),
+        content: const Text(
+          'Email analysis will go back to using the local model, if this was '
+          'active. You can reconnect a key at any time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await context.read<AISettingsModel>().disconnectKey(widget.provider.id);
+    }
+  }
+
+  Future<void> _select() async {
+    final model = context.read<AISettingsModel>();
+    final error = await model.setProvider(widget.provider.id);
+    if (error != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.laColors;
+    final model = context.watch<AISettingsModel>();
+    final settings = model.settings;
+    final hasKey = settings.hasKeyFor(widget.provider.id);
+
+    return Card(
+      child: Column(
+        children: [
+          _SelectableProviderTile(
+            icon: Icons.auto_awesome,
+            title: widget.provider.label,
+            subtitle: hasKey ? 'API key connected' : 'No API key connected',
+            selected: settings.provider == widget.provider.id,
+            // Can't select a provider with no key connected.
+            onTap: (!hasKey || model.busy) ? null : _select,
+          ),
+          if (hasKey)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                LaSpacing.base,
+                0,
+                LaSpacing.sm,
+                LaSpacing.x2xs,
+              ),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: model.busy ? null : _confirmDisconnect,
+                  icon: const Icon(Icons.link_off, size: 16),
+                  label: const Text('Disconnect'),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                LaSpacing.base,
+                0,
+                LaSpacing.base,
+                LaSpacing.sm,
+              ),
+              child: _editingKey
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          controller: _apiKeyController,
+                          autofocus: true,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: widget.provider.keyLabel,
+                            hintText: widget.provider.keyHint,
+                            border: const OutlineInputBorder(),
+                          ),
+                          onFieldSubmitted: (_) => _connect(),
+                        ),
+                        if (_error != null) ...[
+                          const SizedBox(height: LaSpacing.sm),
+                          Text(
+                            _error!,
+                            style: LaTextStyles.bodySm.copyWith(
+                              color: colors.contentErrorPrimary,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: LaSpacing.sm),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: model.busy
+                                  ? null
+                                  : () => setState(() {
+                                      _editingKey = false;
+                                      _error = null;
+                                      _apiKeyController.clear();
+                                    }),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: LaSpacing.x2xs),
+                            FilledButton(
+                              onPressed: model.busy ? null : _connect,
+                              child: model.busy
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Connect'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
+                  : Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() => _editingKey = true),
+                        icon: const Icon(Icons.add),
+                        label: Text('Connect ${widget.provider.label} API key'),
+                      ),
+                    ),
+            ),
+        ],
+      ),
     );
   }
 }

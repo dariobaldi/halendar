@@ -129,6 +129,13 @@ deploy/setup:
 	@echo '*** 01.sh ends in a reboot, so the line above always reports an error (the connection drop) even on success — check its output above for real failures.'
 	@echo '*** Waiting for the server to come back up after reboot...'
 	@until ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@${HOST_IP} true 2>/dev/null; do sleep 3; done
+	@$(MAKE) -s deploy/caddy
+
+# Run standalone after editing the Caddyfile, or automatically as part of `deploy`.
+## deploy/caddy: sync ./remote/production/Caddyfile to the server and reload Caddy
+.PHONY: deploy/caddy
+deploy/caddy:
+	@echo '*** Syncing Caddy config'
 	@rsync -P ./remote/production/Caddyfile ${USER}@${HOST_IP}:~
 	@ssh -t ${USER}@${HOST_IP} '\
 		sudo mv ~/Caddyfile /etc/caddy/ \
@@ -137,9 +144,23 @@ deploy/setup:
 		&& sudo systemctl reload caddy \
 	'
 
-## deploy: deploy just the api executable
+# Run standalone, or automatically as part of `deploy`. Safe to re-run: golang-migrate
+# tracks the applied version and no-ops if there's nothing pending. 5433 in the DSN
+# below is the host-side port docker-compose.yml maps postgres to (see its "ports:"
+# entry) -- reachable from the server itself, not from outside it.
+## deploy/migrate: sync ./migrations to the server and apply any pending ones
+.PHONY: deploy/migrate
+deploy/migrate:
+	@echo '*** Syncing and applying database migrations'
+	@rsync -rP --delete ./migrations ${USER}@${HOST_IP}:~
+	@ssh ${USER}@${HOST_IP} migrate -source file://migrations \
+		-database "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5433/${DATABASE_NAME}?sslmode=disable" up
+
+## deploy: apply pending migrations, sync Caddy config, then deploy the api executable
 .PHONY: deploy
 deploy: confirm
+	@$(MAKE) -s deploy/migrate
+	@$(MAKE) -s deploy/caddy
 	@echo '*** Building API binary'
 	GOOS=linux GOARCH=amd64 go build -ldflags=${linker_flags} -o bin/linux_amd64/api ./cmd/api/
 	@docker context use halendar

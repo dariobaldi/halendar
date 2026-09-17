@@ -5,21 +5,37 @@ import 'package:halendar_front/services/api.dart';
 import 'package:halendar_front/services/auth.dart';
 
 /// Which model email analysis uses for the current user: the shared local Ollama
-/// instance by default, or their own connected Claude API key once activated.
+/// instance by default, or their own connected Claude or Gemini API key once
+/// activated. A user can have both a Claude and a Gemini key on file at once and
+/// switch between them freely -- only one is ever active at a time.
 class AISettings {
-  final String provider; // 'ollama' | 'claude'
-  final bool hasApiKey;
+  final String provider; // 'ollama' | 'claude' | 'gemini'
+  final bool hasClaudeKey;
+  final bool hasGeminiKey;
 
-  const AISettings({required this.provider, required this.hasApiKey});
+  const AISettings({
+    required this.provider,
+    required this.hasClaudeKey,
+    required this.hasGeminiKey,
+  });
 
-  static const fallback = AISettings(provider: 'ollama', hasApiKey: false);
+  static const fallback = AISettings(
+    provider: 'ollama',
+    hasClaudeKey: false,
+    hasGeminiKey: false,
+  );
 
-  bool get isClaudeActive => provider == 'claude';
+  bool hasKeyFor(String provider) => switch (provider) {
+    'claude' => hasClaudeKey,
+    'gemini' => hasGeminiKey,
+    _ => true, // ollama needs no key
+  };
 
   factory AISettings.fromJson(Map<String, dynamic> json) {
     return AISettings(
       provider: json['provider'] as String,
-      hasApiKey: json['has_api_key'] as bool? ?? false,
+      hasClaudeKey: json['has_claude_key'] as bool? ?? false,
+      hasGeminiKey: json['has_gemini_key'] as bool? ?? false,
     );
   }
 }
@@ -49,22 +65,23 @@ class AISettingsModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Saves (or replaces) the user's Claude API key. The backend verifies it with a
-  /// live request before storing it, so a typo surfaces here rather than on the next
-  /// background analysis pass. Doesn't itself activate Claude -- call [setProvider]
-  /// separately. Returns null on success, an error message otherwise.
-  Future<String?> connectClaude(String apiKey) =>
-      _mutate('PUT', 'v1/ai-settings/claude-key', {'api_key': apiKey});
+  /// Saves (or replaces) the user's API key for provider ('claude' or 'gemini'). The
+  /// backend verifies it with a live request before storing it, so a typo surfaces
+  /// here rather than on the next background analysis pass. Doesn't itself activate
+  /// the provider -- call [setProvider] separately. Returns null on success, an
+  /// error message otherwise.
+  Future<String?> connectKey(String provider, String apiKey) =>
+      _mutate('PUT', 'v1/ai-settings/$provider/key', {'api_key': apiKey});
 
-  /// Removes the stored key, which also forces the provider back to Ollama
-  /// server-side.
-  Future<String?> disconnectClaude() =>
-      _mutate('DELETE', 'v1/ai-settings/claude-key', null);
+  /// Removes the stored key for provider, which also forces the active provider
+  /// back to Ollama server-side if it was the one just disconnected.
+  Future<String?> disconnectKey(String provider) =>
+      _mutate('DELETE', 'v1/ai-settings/$provider/key', null);
 
   /// Switches which model future analysis uses. The backend rejects switching to
-  /// 'claude' if no key is on file.
+  /// 'claude'/'gemini' if no key is on file for it.
   Future<String?> setProvider(String provider) =>
-      _mutate('PUT', 'v1/ai-settings/provider', {'provider': provider});
+      _mutate('PATCH', 'v1/ai-settings/provider', {'provider': provider});
 
   Future<String?> _mutate(
     String method,

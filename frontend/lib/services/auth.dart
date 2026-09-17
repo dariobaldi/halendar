@@ -201,13 +201,13 @@ void devNotification({
   debugPrint(stackTrace.toString());
   debugPrint("----------------------------");
 
-  if (showInScreen) {
-    addNotification(
-      title: title != "" ? "Internal error: $title" : "Internal error",
-      content: "Error: $err",
-      type: "error",
-    );
-  }
+  // if (showInScreen) {
+  //   addNotification(
+  //     title: title != "" ? "Internal error: $title" : "Internal error",
+  //     content: "Error: $err",
+  //     type: "error",
+  //   );
+  // }
 }
 
 class AuthUser {

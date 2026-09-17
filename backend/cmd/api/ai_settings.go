@@ -9,12 +9,13 @@ import (
 
 	"github.com/dariobaldi/halendar_back/internal/claude"
 	"github.com/dariobaldi/halendar_back/internal/data"
+	"github.com/dariobaldi/halendar_back/internal/gemini"
 	"github.com/dariobaldi/halendar_back/internal/secretbox"
 	"github.com/google/uuid"
 )
 
 // getAISettingsHandler returns the current user's AI provider choice and whether a
-// Claude key is on file (never the key itself).
+// Claude/Gemini key is on file for each (never the keys themselves).
 func (app *app) getAISettingsHandler(w http.ResponseWriter, r *http.Request) {
 	user := app.contextGetUser(r)
 
@@ -28,12 +29,38 @@ func (app *app) getAISettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// connectClaudeHandler imports (or replaces) the user's Anthropic API key. The key is
-// verified with a minimal live request before being stored, so a typo or revoked key
-// is caught immediately rather than silently failing the next background analysis
-// pass. Doesn't itself activate Claude -- see setAIProviderHandler.
-func (app *app) connectClaudeHandler(w http.ResponseWriter, r *http.Request) {
+// verifyAIKey checks a candidate API key against the real provider before it's
+// stored, so a typo or revoked key is caught immediately rather than silently
+// failing the next background analysis pass.
+func verifyAIKey(ctx context.Context, provider, apiKey, model string) error {
+	switch provider {
+	case data.AIProviderClaude:
+		return claude.VerifyKey(ctx, apiKey, model)
+	case data.AIProviderGemini:
+		return gemini.VerifyKey(ctx, apiKey, model)
+	default:
+		return fmt.Errorf("%q is not a key-bearing AI provider", provider)
+	}
+}
+
+// modelFor returns the model name provider's key is sent to, from config.
+func (app *app) modelFor(provider string) string {
+	if provider == data.AIProviderGemini {
+		return app.config.gemini.model
+	}
+	return app.config.claude.model
+}
+
+// connectAIKeyHandler imports (or replaces) the user's API key for :provider (claude
+// or gemini). Doesn't itself activate that provider -- see setAIProviderHandler.
+func (app *app) connectAIKeyHandler(w http.ResponseWriter, r *http.Request) {
 	user := app.contextGetUser(r)
+
+	provider := app.readStringParam(r, "provider")
+	if provider != data.AIProviderClaude && provider != data.AIProviderGemini {
+		app.badRequestResponse(w, r, fmt.Errorf("unknown provider %q", provider))
+		return
+	}
 
 	var input struct {
 		APIKey string `json:"api_key"`
@@ -49,8 +76,8 @@ func (app *app) connectClaudeHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := claude.VerifyKey(ctx, input.APIKey, app.config.claude.model); err != nil {
-		app.errorResponse(w, r, http.StatusUnprocessableEntity, "Could not verify this API key with Claude: "+err.Error())
+	if err := verifyAIKey(ctx, provider, input.APIKey, app.modelFor(provider)); err != nil {
+		app.errorResponse(w, r, http.StatusUnprocessableEntity, fmt.Sprintf("Could not verify this API key with %s: %s", provider, err.Error()))
 		return
 	}
 
@@ -59,7 +86,7 @@ func (app *app) connectClaudeHandler(w http.ResponseWriter, r *http.Request) {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
-	if err := app.models.AISettings.SetAPIKey(user.ID, encrypted); err != nil {
+	if err := app.models.AISettings.SetAPIKey(user.ID, provider, encrypted); err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
@@ -67,11 +94,18 @@ func (app *app) connectClaudeHandler(w http.ResponseWriter, r *http.Request) {
 	app.respondAISettings(w, r, user.ID)
 }
 
-// disconnectClaudeHandler removes the stored key and falls back to the local model.
-func (app *app) disconnectClaudeHandler(w http.ResponseWriter, r *http.Request) {
+// disconnectAIKeyHandler removes the stored key for :provider, falling back to the
+// local model if it was the active one.
+func (app *app) disconnectAIKeyHandler(w http.ResponseWriter, r *http.Request) {
 	user := app.contextGetUser(r)
 
-	if err := app.models.AISettings.ClearAPIKey(user.ID); err != nil {
+	provider := app.readStringParam(r, "provider")
+	if provider != data.AIProviderClaude && provider != data.AIProviderGemini {
+		app.badRequestResponse(w, r, fmt.Errorf("unknown provider %q", provider))
+		return
+	}
+
+	if err := app.models.AISettings.ClearAPIKey(user.ID, provider); err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
@@ -79,7 +113,7 @@ func (app *app) disconnectClaudeHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // setAIProviderHandler switches which model future analysis uses for this user.
-// Rejected if switching to Claude without a key on file.
+// Rejected if switching to Claude or Gemini without a key on file for it.
 func (app *app) setAIProviderHandler(w http.ResponseWriter, r *http.Request) {
 	user := app.contextGetUser(r)
 
@@ -90,19 +124,21 @@ func (app *app) setAIProviderHandler(w http.ResponseWriter, r *http.Request) {
 		app.badRequestResponse(w, r, err)
 		return
 	}
-	if input.Provider != data.AIProviderOllama && input.Provider != data.AIProviderClaude {
+	if input.Provider != data.AIProviderOllama && input.Provider != data.AIProviderClaude && input.Provider != data.AIProviderGemini {
 		app.badRequestResponse(w, r, fmt.Errorf("unknown provider %q", input.Provider))
 		return
 	}
 
-	if input.Provider == data.AIProviderClaude {
+	if input.Provider != data.AIProviderOllama {
 		settings, err := app.models.AISettings.Get(user.ID)
 		if err != nil {
 			app.serverErrorResponse(w, r, err)
 			return
 		}
-		if !settings.HasAPIKey {
-			app.badRequestResponse(w, r, errors.New("connect a Claude API key before activating it"))
+		hasKey := (input.Provider == data.AIProviderClaude && settings.HasClaudeKey) ||
+			(input.Provider == data.AIProviderGemini && settings.HasGeminiKey)
+		if !hasKey {
+			app.badRequestResponse(w, r, fmt.Errorf("connect a %s API key before activating it", input.Provider))
 			return
 		}
 	}

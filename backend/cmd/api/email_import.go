@@ -11,6 +11,7 @@ import (
 	"github.com/dariobaldi/halendar_back/internal/calendarimport"
 	"github.com/dariobaldi/halendar_back/internal/claude"
 	"github.com/dariobaldi/halendar_back/internal/data"
+	"github.com/dariobaldi/halendar_back/internal/gemini"
 	"github.com/dariobaldi/halendar_back/internal/push"
 	"github.com/dariobaldi/halendar_back/internal/secretbox"
 	"github.com/google/uuid"
@@ -26,31 +27,43 @@ type aiClient interface {
 	GenerateDeterministic(ctx context.Context, prompt string) (string, error)
 }
 
-// aiClientFor returns the AI client to use for userID's analysis: their own Claude
-// key if they've connected and activated one, falling back to the shared local Ollama
-// instance otherwise -- including on any lookup/decryption error, so a misconfigured
-// Claude key degrades to "use the local model" rather than breaking analysis outright.
+// aiClientFor returns the AI client to use for userID's analysis: their own Claude or
+// Gemini key if they've connected and activated one, falling back to the shared local
+// Ollama instance otherwise -- including on any lookup/decryption error, so a
+// misconfigured key degrades to "use the local model" rather than breaking analysis
+// outright.
 func (app *app) aiClientFor(userID uuid.UUID) aiClient {
 	settings, err := app.models.AISettings.Get(userID)
 	if err != nil {
 		app.logger.Error("ai settings: loading: " + err.Error())
 		return app.ollama
 	}
-	if settings.Provider != data.AIProviderClaude {
+
+	var model string
+	switch settings.Provider {
+	case data.AIProviderClaude:
+		model = app.config.claude.model
+	case data.AIProviderGemini:
+		model = app.config.gemini.model
+	default:
 		return app.ollama
 	}
 
-	encrypted, err := app.models.AISettings.GetEncryptedAPIKey(userID)
+	encrypted, err := app.models.AISettings.GetEncryptedAPIKey(userID, settings.Provider)
 	if err != nil {
-		app.logger.Error("ai settings: loading claude key: " + err.Error())
+		app.logger.Error("ai settings: loading " + settings.Provider + " key: " + err.Error())
 		return app.ollama
 	}
 	plaintext, err := secretbox.Open(app.encryptionKey, encrypted)
 	if err != nil {
-		app.logger.Error("ai settings: decrypting claude key: " + err.Error())
+		app.logger.Error("ai settings: decrypting " + settings.Provider + " key: " + err.Error())
 		return app.ollama
 	}
-	return claude.New(string(plaintext), app.config.claude.model)
+
+	if settings.Provider == data.AIProviderGemini {
+		return gemini.New(string(plaintext), model)
+	}
+	return claude.New(string(plaintext), model)
 }
 
 // emailSyncLoop periodically checks every connected account for new mail. Each

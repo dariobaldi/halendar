@@ -94,12 +94,16 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/ai/test", app.requirePermission(UserLevel, app.testPromptHandler))
 
 	// AI settings: which model email analysis uses for this user -- the shared local
-	// Ollama instance by default, or the user's own Claude API key once they've
-	// connected and activated one.
+	// Ollama instance by default, or the user's own Claude/Gemini API key once
+	// they've connected and activated one.
+	// setAIProviderHandler is PATCH, not PUT, so its static "/provider" segment
+	// doesn't collide with the wildcard ":provider" below -- httprouter keeps a
+	// separate route tree per method, but panics at startup if the same method has
+	// both a static and a wildcard child at the same position.
 	router.HandlerFunc(http.MethodGet, "/v1/ai-settings", app.requirePermission(UserLevel, app.getAISettingsHandler))
-	router.HandlerFunc(http.MethodPut, "/v1/ai-settings/provider", app.requirePermission(UserLevel, app.setAIProviderHandler))
-	router.HandlerFunc(http.MethodPut, "/v1/ai-settings/claude-key", app.requirePermission(UserLevel, app.connectClaudeHandler))
-	router.HandlerFunc(http.MethodDelete, "/v1/ai-settings/claude-key", app.requirePermission(UserLevel, app.disconnectClaudeHandler))
+	router.HandlerFunc(http.MethodPatch, "/v1/ai-settings/provider", app.requirePermission(UserLevel, app.setAIProviderHandler))
+	router.HandlerFunc(http.MethodPut, "/v1/ai-settings/:provider/key", app.requirePermission(UserLevel, app.connectAIKeyHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/ai-settings/:provider/key", app.requirePermission(UserLevel, app.disconnectAIKeyHandler))
 
 	// Devices: register a push token so notifications can be sent to it
 	router.HandlerFunc(http.MethodGet, "/v1/devices", app.requirePermission(UserLevel, app.listDevicesHandler))
