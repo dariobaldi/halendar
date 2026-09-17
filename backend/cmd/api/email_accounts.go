@@ -122,11 +122,9 @@ func (app *app) emailAccountCallbackHandler(w http.ResponseWriter, r *http.Reque
 		app.logger.Error("email callback: linking calendar account: " + err.Error())
 	}
 
-	// Establish the UID baseline right away rather than waiting for the next tick (up
-	// to a minute away): NewSince(ctx, 0) never imports the existing backlog on this
-	// first pass, but running it now closes the window where mail arriving before the
-	// next tick would otherwise be silently folded into the baseline and missed.
-	app.background(func() { app.syncEmailAccount(account) })
+	// Import the account's current unread mail (see backfillNewAccount) and establish
+	// the regular sync baseline, right away rather than waiting for the next tick.
+	app.background(func() { app.backfillNewAccount(account) })
 
 	app.SendToWsUser(user.ID, app.retriveWebSocket("halendar"), envelope{"type": "email_accounts", "refresh": true})
 	app.writeOAuthResult(w, http.StatusOK, true, email+" is now connected.")

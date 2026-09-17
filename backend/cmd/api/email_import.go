@@ -63,6 +63,59 @@ func (app *app) syncEmailAccount(account data.EmailAccount) {
 		return
 	}
 
+	app.importMessages(account, msgs)
+
+	if err := app.models.EmailAccounts.UpdateSyncState(account.ID, highestUID, nil); err != nil {
+		app.logger.Error("email sync: updating sync state: " + err.Error())
+	}
+}
+
+// backfillLimit caps the initial import so connecting an account with years of mail
+// doesn't try to analyze all of it at once -- unread mail is what's actually likely to
+// still need a reply, and 100 is already generous for that.
+const backfillLimit = 100
+
+// backfillNewAccount runs once, right after an account is connected: rather than only
+// watching for mail from this point on, it imports the account's current unread
+// messages (capped at backfillLimit, most recent first) so the app already has
+// something useful to show before anything new even arrives. The regular sync
+// baseline (the UID high-water mark) is established separately and afterwards, since
+// backfilling only unread mail can't be used to infer it -- an unread message older
+// than the newest read one would otherwise leave the baseline too low, causing the
+// next regular sync to "rediscover" mail that was intentionally left out here.
+func (app *app) backfillNewAccount(account data.EmailAccount) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	mailbox, err := app.connectMailbox(ctx, account)
+	if err != nil {
+		app.recordSyncFailure(account, err)
+		return
+	}
+
+	msgs, err := mailbox.Search(ctx, mail.SearchQuery{Unread: true, Max: backfillLimit})
+	if err != nil {
+		app.logger.Error("email backfill: searching unread mail: " + err.Error())
+	} else {
+		app.importMessages(account, msgs)
+	}
+
+	// lastUID = 0 never imports anything on its own (see NewSince's doc comment) --
+	// it's only used here to read the mailbox's current highest UID as the baseline
+	// for future incremental syncs.
+	_, highestUID, err := mailbox.NewSince(ctx, 0)
+	if err != nil {
+		app.recordSyncFailure(account, err)
+		return
+	}
+	if err := app.models.EmailAccounts.UpdateSyncState(account.ID, highestUID, nil); err != nil {
+		app.logger.Error("email backfill: updating sync state: " + err.Error())
+	}
+}
+
+// importMessages stores each message as history (skipping ones already imported by an
+// overlapping sync) and kicks off AI analysis for the new ones.
+func (app *app) importMessages(account data.EmailAccount, msgs []mail.Message) {
 	for _, msg := range msgs {
 		record := data.EmailMessage{
 			EmailAccountID:    account.ID,
@@ -77,7 +130,7 @@ func (app *app) syncEmailAccount(account data.EmailAccount) {
 		}
 		inserted, err := app.models.EmailMessages.Insert(&record)
 		if err != nil {
-			app.logger.Error("email sync: storing message: " + err.Error())
+			app.logger.Error("email import: storing message: " + err.Error())
 			continue
 		}
 		if !inserted {
@@ -85,10 +138,6 @@ func (app *app) syncEmailAccount(account data.EmailAccount) {
 		}
 
 		app.background(func() { app.analyzeEmailMessage(account.UserID, record, record.Body) })
-	}
-
-	if err := app.models.EmailAccounts.UpdateSyncState(account.ID, highestUID, nil); err != nil {
-		app.logger.Error("email sync: updating sync state: " + err.Error())
 	}
 }
 
