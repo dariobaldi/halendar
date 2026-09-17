@@ -16,6 +16,7 @@ const (
 	ScopeActivation     = "activation"
 	ScopeAuthentication = "authentication"
 	ScopeWsToken        = "websocket"
+	ScopeOAuthState     = "oauth_state"
 )
 
 type Token struct {

@@ -1,0 +1,1 @@
+ALTER TABLE email_messages DROP COLUMN IF EXISTS body;
