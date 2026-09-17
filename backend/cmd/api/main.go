@@ -60,6 +60,9 @@ type config struct {
 		baseURL string
 		model   string
 	}
+	claude struct {
+		model string // which Claude model a user's own API key is sent to, see internal/claude
+	}
 	push struct {
 		projectID          string
 		serviceAccountFile string

@@ -57,6 +57,14 @@ CALDAV_TIMEZONE=Europe/Paris
 OLLAMA_MODEL=gemma3:1b
 OLLAMA_BASE_URL=http://ollama:11434
 
+# Model used for a user's own Claude API key (internal/claude), once they've connected
+# one in Settings and activated it in place of the shared local Ollama instance (see
+# ai_provider_settings / cmd/api/ai_settings.go) -- no key or credential goes here,
+# each user's is encrypted at rest with ENCRYPTION_KEY, same as email/calendar
+# accounts. A fast/cheap model is the right default since this is the same
+# background bulk-classification job Ollama otherwise handles.
+CLAUDE_MODEL=claude-haiku-4-5-20251001
+
 # Push notifications (Firebase Cloud Messaging). FCM_SERVICE_ACCOUNT_FILE is a path
 # to the JSON key downloaded from Firebase Console > Project Settings > Service
 # Accounts > Generate new private key. Without these, /v1/push/* endpoints return

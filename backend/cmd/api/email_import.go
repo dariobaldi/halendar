@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dariobaldi/halendar_back/internal/calendarimport"
+	"github.com/dariobaldi/halendar_back/internal/claude"
 	"github.com/dariobaldi/halendar_back/internal/data"
 	"github.com/dariobaldi/halendar_back/internal/push"
 	"github.com/dariobaldi/halendar_back/internal/secretbox"
@@ -16,6 +17,41 @@ import (
 	"halendar/calendar"
 	"halendar/mail"
 )
+
+// aiClient is the shape both internal/ollama.Client and internal/claude.Client
+// implement, letting the analysis pipeline below use whichever a user has chosen
+// (see aiClientFor) without caring which it's actually talking to.
+type aiClient interface {
+	Generate(ctx context.Context, prompt string) (string, error)
+	GenerateDeterministic(ctx context.Context, prompt string) (string, error)
+}
+
+// aiClientFor returns the AI client to use for userID's analysis: their own Claude
+// key if they've connected and activated one, falling back to the shared local Ollama
+// instance otherwise -- including on any lookup/decryption error, so a misconfigured
+// Claude key degrades to "use the local model" rather than breaking analysis outright.
+func (app *app) aiClientFor(userID uuid.UUID) aiClient {
+	settings, err := app.models.AISettings.Get(userID)
+	if err != nil {
+		app.logger.Error("ai settings: loading: " + err.Error())
+		return app.ollama
+	}
+	if settings.Provider != data.AIProviderClaude {
+		return app.ollama
+	}
+
+	encrypted, err := app.models.AISettings.GetEncryptedAPIKey(userID)
+	if err != nil {
+		app.logger.Error("ai settings: loading claude key: " + err.Error())
+		return app.ollama
+	}
+	plaintext, err := secretbox.Open(app.encryptionKey, encrypted)
+	if err != nil {
+		app.logger.Error("ai settings: decrypting claude key: " + err.Error())
+		return app.ollama
+	}
+	return claude.New(string(plaintext), app.config.claude.model)
+}
 
 // emailSyncLoop periodically checks every connected account for new mail. Each
 // account is synced independently and in its own goroutine, so one slow or broken
@@ -264,12 +300,14 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
+	client := app.aiClientFor(userID)
+
 	referenceDate := msg.ReceivedAt
 	if referenceDate.IsZero() {
 		referenceDate = time.Now()
 	}
 	prompt := fmt.Sprintf(eventExtractionPromptTmpl, referenceDate.Format("2006-01-02"), msg.Subject, body)
-	response, err := app.ollama.GenerateDeterministic(ctx, prompt)
+	response, err := client.GenerateDeterministic(ctx, prompt)
 	if err != nil {
 		if setErr := app.models.EmailMessages.SetAnalysisError(msg.ID, err); setErr != nil {
 			app.logger.Error("email analysis: recording error: " + setErr.Error())
@@ -296,7 +334,7 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 			NeedsManualReview: len(slots) == 0, // asked to participate, but no usable time could be pinned down
 			Slots:             slots,
 		}
-		app.draftEventReply(ctx, userID, calSource, loc, msg, &event)
+		app.draftEventReply(ctx, client, userID, calSource, loc, msg, &event)
 		if err := app.models.EmailEvents.Upsert(&event); err != nil {
 			app.logger.Error("email analysis: storing extracted event: " + err.Error())
 		} else if notify {
@@ -517,9 +555,9 @@ Text:
 // detectLanguage returns the model's best guess at text's language as an English
 // name (e.g. "French"), or "the original email's language" if detection fails --
 // still a valid, if less reliable, instruction for replyPromptTmpl to follow.
-func (app *app) detectLanguage(ctx context.Context, text string) string {
+func (app *app) detectLanguage(ctx context.Context, client aiClient, text string) string {
 	prompt := fmt.Sprintf(detectLanguagePromptTmpl, text)
-	response, err := app.ollama.GenerateDeterministic(ctx, prompt)
+	response, err := client.GenerateDeterministic(ctx, prompt)
 	if err != nil {
 		app.logger.Error("detect language: " + err.Error())
 		return "the original email's language"
@@ -559,7 +597,7 @@ Original email:
 // on the calendar when none were -- and asks the local model to phrase it. Sets
 // event.ResponseKind/ResponseDraft, and appends any suggested alternatives to
 // event.Slots.
-func (app *app) draftEventReply(ctx context.Context, userID uuid.UUID, source calendarimport.Source, loc *time.Location, msg data.EmailMessage, event *data.EmailMessageEvent) {
+func (app *app) draftEventReply(ctx context.Context, client aiClient, userID uuid.UUID, source calendarimport.Source, loc *time.Location, msg data.EmailMessage, event *data.EmailMessageEvent) {
 	user, err := app.models.Users.Get(userID)
 	if err != nil {
 		app.logger.Error("draft reply: loading user: " + err.Error())
@@ -597,9 +635,9 @@ func (app *app) draftEventReply(ctx context.Context, userID uuid.UUID, source ca
 		}
 	}
 
-	language := app.detectLanguage(ctx, msg.Body)
+	language := app.detectLanguage(ctx, client, msg.Body)
 	prompt := fmt.Sprintf(replyPromptTmpl, user.Name, msg.Subject, language, language, outcome, user.Name, user.Name, user.Name, msg.Body)
-	response, err := app.ollama.GenerateDeterministic(ctx, prompt)
+	response, err := client.GenerateDeterministic(ctx, prompt)
 	if err != nil {
 		app.logger.Error("draft reply: generating: " + err.Error())
 		return

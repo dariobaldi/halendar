@@ -48,6 +48,11 @@ func (cfg *config) GetVariables() {
 	cfg.ollama.baseURL = getEnvString("OLLAMA_BASE_URL", "http://ollama:11434")
 	cfg.ollama.model = getEnvString("OLLAMA_MODEL", "gemma3:1b")
 
+	// Model used for a user's own Claude API key, once they've connected and
+	// activated one (see internal/claude and cmd/api/ai_settings.go) -- unrelated to
+	// which Anthropic account or plan owns the key, just which model it's billed to.
+	cfg.claude.model = getEnvString("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
+
 	cfg.push.projectID = getEnvString("FCM_PROJECT_ID", "")
 	cfg.push.serviceAccountFile = getEnvString("FCM_SERVICE_ACCOUNT_FILE", "")
 

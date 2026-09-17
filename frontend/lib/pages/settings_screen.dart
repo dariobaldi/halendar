@@ -4,6 +4,7 @@ import 'package:lasuite_ui/lasuite_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../utils/layout.dart';
+import 'settings/ai_settings_screen.dart';
 import 'settings/calendar_accounts_screen.dart';
 import 'settings/email_accounts_screen.dart';
 import '../widgets/theme_toggle_button.dart';
@@ -106,6 +107,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const CalendarAccountsScreen(),
+                        ),
+                      ),
+                    ),
+                    Divider(height: 1, color: colors.borderSurfacePrimary),
+                    ListTile(
+                      leading: Icon(
+                        Icons.auto_awesome,
+                        color: colors.contentNeutralSecondary,
+                      ),
+                      title: const Text('AI model'),
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: colors.contentNeutralTertiary,
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AISettingsScreen(),
                         ),
                       ),
                     ),

@@ -23,6 +23,7 @@ type Models struct {
 	EmailEvents      EmailEventModel
 	CalendarAccounts CalendarAccountModel
 	Proposals        ProposalModel
+	AISettings       AIProviderSettingsModel
 }
 
 func NewModels(db *sql.DB) Models {
@@ -35,5 +36,6 @@ func NewModels(db *sql.DB) Models {
 		EmailEvents:      EmailEventModel{DB: db},
 		CalendarAccounts: CalendarAccountModel{DB: db},
 		Proposals:        ProposalModel{DB: db},
+		AISettings:       AIProviderSettingsModel{DB: db},
 	}
 }

@@ -92,6 +92,14 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/ai/prompt", app.requirePermission(UserLevel, app.promptHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/ai/test", app.requirePermission(UserLevel, app.testPromptHandler))
 
+	// AI settings: which model email analysis uses for this user -- the shared local
+	// Ollama instance by default, or the user's own Claude API key once they've
+	// connected and activated one.
+	router.HandlerFunc(http.MethodGet, "/v1/ai-settings", app.requirePermission(UserLevel, app.getAISettingsHandler))
+	router.HandlerFunc(http.MethodPut, "/v1/ai-settings/provider", app.requirePermission(UserLevel, app.setAIProviderHandler))
+	router.HandlerFunc(http.MethodPut, "/v1/ai-settings/claude-key", app.requirePermission(UserLevel, app.connectClaudeHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/ai-settings/claude-key", app.requirePermission(UserLevel, app.disconnectClaudeHandler))
+
 	// Devices: register a push token so notifications can be sent to it
 	router.HandlerFunc(http.MethodGet, "/v1/devices", app.requirePermission(UserLevel, app.listDevicesHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/devices", app.requirePermission(UserLevel, app.registerDeviceHandler))
