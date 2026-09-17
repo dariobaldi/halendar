@@ -125,10 +125,15 @@ connect/root:
 deploy/setup:
 	@rsync -rP --delete ./remote/setup root@${HOST_IP}:/root
 	@rsync -P .env root@${HOST_IP}:/root/setup/
-	@ssh -t root@${HOST_IP} "bash /root/setup/01.sh"
+	-@ssh -t root@${HOST_IP} "bash /root/setup/01.sh"
+	@echo '*** 01.sh ends in a reboot, so the line above always reports an error (the connection drop) even on success — check its output above for real failures.'
+	@echo '*** Waiting for the server to come back up after reboot...'
+	@until ssh -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@${HOST_IP} true 2>/dev/null; do sleep 3; done
 	@rsync -P ./remote/production/Caddyfile ${USER}@${HOST_IP}:~
 	@ssh -t ${USER}@${HOST_IP} '\
 		sudo mv ~/Caddyfile /etc/caddy/ \
+		&& sudo chown root:root /etc/caddy/Caddyfile \
+		&& sudo chmod 644 /etc/caddy/Caddyfile \
 		&& sudo systemctl reload caddy \
 	'
 
@@ -137,7 +142,7 @@ deploy/setup:
 deploy: confirm
 	@echo '*** Building API binary'
 	GOOS=linux GOARCH=amd64 go build -ldflags=${linker_flags} -o bin/linux_amd64/api ./cmd/api/
-	@docker context use remote
+	@docker context use halendar
 	@echo '*** Building Docker Container'
 	@docker-compose up -d --no-deps --build halendar-api
 	@docker context use default
@@ -145,7 +150,7 @@ deploy: confirm
 ## deploy/restart: fully restart the docker container
 .PHONY: deploy/restart
 deploy/restart: confirm
-	@docker context use remote
+	@docker context use halendar
 	@docker-compose down
 	@docker-compose up -d
 	@docker context use default
@@ -186,9 +191,9 @@ db/config/local:
 .PHONY: db/config
 db/config:
 	@echo '=> Updating Config File'
-	@rsync -avz ./postgresql.conf halendar@51.89.150.207:~/postgresql.conf
+	@rsync -avz ./postgresql.conf ${USER}@${HOST_IP}:~/postgresql.conf
 	@ssh ${USER}@${HOST_IP} docker cp ./postgresql.conf postgres:/etc/postgresql/postgresql.conf
-	@docker context use remote
+	@docker context use halendar
 	@docker-compose up -d --no-deps --build postgres
 	@docker context use default
 
@@ -196,7 +201,7 @@ db/config:
 .PHONY: frontend/version
 frontend/version:
 	@echo '=> Importing db dump'
-	@docker context use remote
+	@docker context use halendar
 	@docker exec -i postgres psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -c "INSERT INTO app_version (frontend) VALUES ('${version}')"
 	@docker exec -i postgres psql -U ${POSTGRES_USER} -d ${DATABASE_NAME} -c "REFRESH MATERIALIZED VIEW CONCURRENTLY dashboard_summary"
 	@docker context use default
@@ -206,7 +211,7 @@ frontend/version:
 apply:
 	@echo '*** Building API binary'
 	GOOS=linux GOARCH=amd64 go build -ldflags=${linker_flags} -o bin/linux_amd64/api ./cmd/api/
-	@docker context use remote
+	@docker context use halendar
 	@echo '*** Building Docker Container'
 	@docker-compose up -d
 	@docker context use default

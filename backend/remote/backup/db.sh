@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ## 1.Create the remote dump
-# docker context use remote
+# docker context use halendar
 # rm -f ./remote/backup/db.dump
 # docker exec postgres rm ./db.dump
 # docker exec postgres pg_dump -U halendar -d halendar -F c -b -v -f ./db.dump

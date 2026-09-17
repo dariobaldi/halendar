@@ -1,8 +1,12 @@
 # #!/bin/bash
 set -eu
 
+# Resolve paths (.env, etc.) relative to this script, not the caller's cwd —
+# `ssh root@host "bash /root/setup/01.sh"` starts in /root, not /root/setup.
+cd "$(dirname "$0")"
+
 # Install dos2unix to format env file
-apt install dos2unix
+apt --yes install dos2unix
 dos2unix .env
 
 source .env
@@ -34,12 +38,16 @@ apt update
 timedatectl set-timezone ${TIMEZONE}
 apt --yes install locales-all
 
-# Add the new user (and give them sudo privileges).
-useradd --create-home --shell "/bin/bash" --groups sudo "${USER}"
+# Add the new user (and give them sudo privileges). Skipped if a re-run finds it already there.
+id -u "${USER}" >/dev/null 2>&1 || useradd --create-home --shell "/bin/bash" --groups sudo "${USER}"
 
-# Force a password to be set for the new user the first time they log in.
+# This user is SSH-key only: no password at all (rather than one nobody knows),
+# and passwordless sudo — a forced/interactive password flow would block every
+# non-interactive deploy step (including this script's own later use of the
+# account), since there is no password to authenticate with.
 passwd --delete "${USER}"
-chage --lastday 0 "${USER}"
+echo "${USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${USER}"
+chmod 440 "/etc/sudoers.d/${USER}"
 
 # Copy the SSH keys from the root user to the new user.
 rsync --archive --chown=${USER}:${USER} /root/.ssh /home/${USER}
@@ -59,8 +67,8 @@ mv migrate.linux-amd64 /usr/local/bin/migrate
 
 # Install Caddy (see https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
 apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
 apt update
 apt --yes install caddy
 
@@ -81,10 +89,10 @@ apt install -y  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docke
 docker volume create halendar-db
 docker volume create halendar-api
 docker volume create halendar-ollama
-docker volume create config-files
-## Add user to Docker group
+docker volume create config_files
+## Add user to Docker group (takes effect on their next login; "newgrp" here
+## would just hang since this script runs non-interactively as root)
 sudo usermod -aG docker ${USER}
-newgrp docker
 
 # Upgrade all packages. Using the --force-confnew flag means that configuration 
 # files will be replaced if newer ones are available.

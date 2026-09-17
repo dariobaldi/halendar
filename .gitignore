@@ -7,3 +7,5 @@
 *.txt
 tester
 valgrind.log
+
+frontend_build/

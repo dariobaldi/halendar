@@ -22,14 +22,14 @@ confirm:
 deploy:
 	@read -p "Enter commit message: " MESSAGE; \
 	flutter build web && \
-	rsync -av --exclude='.git' --exclude='.last_build_id' --delete ./build/web/ ../halendar_front_build/ && \
-	cd ../halendar_front_build && \
+	rsync -av --exclude='.git' --exclude='.last_build_id' --delete ./build/web/ ../frontend_build/ && \
+	cd ../frontend_build && \
 	git add . && \
 	git commit -m "$$MESSAGE" && \
 	git push && \
-	cd ../halendar_front
+	cd ../frontend
 	@if [ "x$(version)" != "x" ]; then \
-		make -s -C ../halendar_back frontend/version version=$(version); \
+		make -s -C ../backend frontend/version version=$(version); \
 	fi
 
 
