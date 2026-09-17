@@ -99,6 +99,47 @@ func TestFirstFreeSlot(t *testing.T) {
 	}
 }
 
+func TestResolveEventSlots(t *testing.T) {
+	app := &app{}
+	loc := time.UTC
+
+	got := app.resolveEventSlots(context.Background(), nil, loc, []extractedSlot{
+		// Explicit, valid end -- used as-is.
+		{Date: "2026-09-18", Start: "09:30", End: "10:00"},
+		// Omitted end (the model correctly following the "don't guess" instruction
+		// when no duration was stated) -- this is the real bug report: a message
+		// like this used to have its slot silently dropped entirely, making a
+		// correctly extracted date/time look like nothing had been found.
+		{Date: "2026-09-18", Start: "14:00"},
+		// End identical to start (the older documented model quirk) -- same
+		// fallback applies rather than dropping the slot.
+		{Date: "2026-09-19", Start: "11:00", End: "11:00"},
+		// Unparseable start -- still correctly dropped.
+		{Date: "not-a-date", Start: "09:00", End: "09:30"},
+	})
+
+	if len(got) != 3 {
+		t.Fatalf("len(got) = %d, want 3 (the unparseable one dropped): %+v", len(got), got)
+	}
+
+	explicit := got[0]
+	if !explicit.EndAt.Equal(time.Date(2026, 9, 18, 10, 0, 0, 0, loc)) {
+		t.Errorf("explicit end not respected: %+v", explicit)
+	}
+
+	omitted := got[1]
+	wantOmittedEnd := time.Date(2026, 9, 18, 14, 0, 0, 0, loc).Add(defaultSlotDuration)
+	if !omitted.EndAt.Equal(wantOmittedEnd) {
+		t.Errorf("omitted end = %v, want default duration applied (%v)", omitted.EndAt, wantOmittedEnd)
+	}
+
+	identical := got[2]
+	wantIdenticalEnd := time.Date(2026, 9, 19, 11, 0, 0, 0, loc).Add(defaultSlotDuration)
+	if !identical.EndAt.Equal(wantIdenticalEnd) {
+		t.Errorf("end-equals-start = %v, want default duration applied (%v)", identical.EndAt, wantIdenticalEnd)
+	}
+}
+
 // fakeCalendarSource is a minimal calendarimport.Source test double: everything is
 // free except the given busy ranges.
 type fakeCalendarSource struct {

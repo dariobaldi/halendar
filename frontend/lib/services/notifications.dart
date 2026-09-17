@@ -9,12 +9,20 @@ class HalendarNotification {
   final String type;
   final int duration;
 
+  /// Set for a push notification that arrived while the app was already open --
+  /// FCM doesn't show a system-tray notification in that case (see
+  /// PushNotificationsService._onForegroundMessage), so this in-app banner is the
+  /// only "notification" there is to tap, and should behave the same as tapping a
+  /// system one would have.
+  final VoidCallback? onTap;
+
   HalendarNotification({
     required this.title,
     required this.content,
     required this.imageUrl,
     this.type = "",
     this.duration = 15,
+    this.onTap,
   }) : id = DateTime.now().microsecondsSinceEpoch.toString();
 }
 
@@ -50,100 +58,104 @@ Widget buildNotificationCard(
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
           color: notificationColor(context, notification.type),
-          child: SelectionArea(
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                spacing: 3,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (notification.imageUrl != "")
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          "${notification.imageUrl}&width=70",
-                          width: 60,
-                          height: 60,
-                          fit: BoxFit.cover,
-                          errorBuilder:
-                              (
-                                BuildContext context,
-                                Object exception,
-                                StackTrace? stackTrace,
-                              ) {
-                                return const SizedBox(
-                                  width: 60,
-                                  height: 60,
-                                  child: Icon(Icons.broken_image),
-                                );
-                              },
+          child: InkWell(
+            onTap: notification.onTap,
+            child: SelectionArea(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                child: Row(
+                  spacing: 3,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (notification.imageUrl != "")
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            "${notification.imageUrl}&width=70",
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (
+                                  BuildContext context,
+                                  Object exception,
+                                  StackTrace? stackTrace,
+                                ) {
+                                  return const SizedBox(
+                                    width: 60,
+                                    height: 60,
+                                    child: Icon(Icons.broken_image),
+                                  );
+                                },
+                          ),
                         ),
                       ),
-                    ),
 
-                  Expanded(
-                    child: Column(
-                      spacing: 3,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          spacing: 3,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            IconButton(
-                              onPressed: () {
-                                AuthService.instance.removeNotification(
-                                  notification.id,
-                                );
-                              },
-                              icon: const Icon(Icons.close),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              color: notificationColor(
-                                context,
-                                "on_${notification.type}",
-                              ),
-                            ),
-
-                            const SizedBox(width: 5),
-
-                            Expanded(
-                              child: Text(
-                                notification.title,
-                                style: TextStyle(
-                                  color: notificationColor(
-                                    context,
-                                    "on_${notification.type}",
-                                  ),
-                                  fontSize: 18,
+                    Expanded(
+                      child: Column(
+                        spacing: 3,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            spacing: 3,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              IconButton(
+                                onPressed: () {
+                                  AuthService.instance.removeNotification(
+                                    notification.id,
+                                  );
+                                },
+                                icon: const Icon(Icons.close),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                color: notificationColor(
+                                  context,
+                                  "on_${notification.type}",
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
 
-                        if (notification.content != "")
-                          const SizedBox(height: 4),
+                              const SizedBox(width: 5),
 
-                        if (notification.content != "")
-                          Text(
-                            notification.content,
-                            softWrap: true,
-                            style: TextStyle(
-                              color: notificationColor(
-                                context,
-                                "on_${notification.type}",
+                              Expanded(
+                                child: Text(
+                                  notification.title,
+                                  style: TextStyle(
+                                    color: notificationColor(
+                                      context,
+                                      "on_${notification.type}",
+                                    ),
+                                    fontSize: 18,
+                                  ),
+                                ),
                               ),
-                              fontSize: 22,
-                            ),
+                            ],
                           ),
-                      ],
+
+                          if (notification.content != "")
+                            const SizedBox(height: 4),
+
+                          if (notification.content != "")
+                            Text(
+                              notification.content,
+                              softWrap: true,
+                              style: TextStyle(
+                                color: notificationColor(
+                                  context,
+                                  "on_${notification.type}",
+                                ),
+                                fontSize: 22,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

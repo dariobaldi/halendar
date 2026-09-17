@@ -41,6 +41,14 @@ class _ProposalsViewState extends State<ProposalsView> {
 
   static const double _minGridCardWidth = 340;
 
+  bool _skippingAll = false;
+
+  Future<void> _skipAllSuggested() async {
+    setState(() => _skippingAll = true);
+    await widget.store.skipAllSuggested();
+    if (mounted) setState(() => _skippingAll = false);
+  }
+
   // GlobalKeys (rather than plain ValueKeys) so a specific card's rendered
   // BuildContext can be found later, to scroll it into view on a notification
   // tap. Only meaningful for the actionable (non-readOnly) view -- a pending
@@ -98,6 +106,11 @@ class _ProposalsViewState extends State<ProposalsView> {
         final proposals = widget.selector(widget.store);
         final focusId = widget.readOnly ? null : widget.store.focusProposalId;
         final currentMode = _resolveViewMode(MediaQuery.sizeOf(context).width);
+        // History's proposals are already resolved (confirmed/rejected) -- bulk-skip
+        // only ever makes sense for the actionable (non-readOnly) list.
+        final suggestedSkipCount = widget.readOnly
+            ? 0
+            : proposals.where((p) => p.suggestedSkip).length;
         return Scaffold(
           appBar: AppBar(
             title: Text(widget.title),
@@ -112,46 +125,58 @@ class _ProposalsViewState extends State<ProposalsView> {
           ),
           body: widget.store.fetching && proposals.isEmpty
               ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: widget.store.fetch,
-                  child: proposals.isEmpty
-                      // Plain Center isn't scrollable, so the pull gesture
-                      // above would never register with nothing to show yet.
-                      ? ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: [widget.emptyState],
-                        )
-                      : LayoutBuilder(
-                          builder: (context, constraints) {
-                            final mode = _resolveViewMode(
-                              constraints.maxWidth,
-                            );
-                            return Align(
-                              alignment: Alignment.topCenter,
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: kPageContentMaxWidth,
-                                ),
-                                child: mode == ProposalViewMode.grid
-                                    ? _ProposalGrid(
-                                        proposals: proposals,
-                                        store: widget.store,
-                                        readOnly: widget.readOnly,
-                                        minCardWidth: _minGridCardWidth,
-                                        focusId: focusId,
-                                        keyFor: _keyFor,
-                                      )
-                                    : _ProposalList(
-                                        proposals: proposals,
-                                        store: widget.store,
-                                        readOnly: widget.readOnly,
-                                        focusId: focusId,
-                                        keyFor: _keyFor,
+              : Column(
+                  children: [
+                    if (suggestedSkipCount > 0)
+                      _SuggestedSkipBanner(
+                        count: suggestedSkipCount,
+                        busy: _skippingAll,
+                        onSkipAll: _skipAllSuggested,
+                      ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: widget.store.fetch,
+                        child: proposals.isEmpty
+                            // Plain Center isn't scrollable, so the pull gesture
+                            // above would never register with nothing to show yet.
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [widget.emptyState],
+                              )
+                            : LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final mode = _resolveViewMode(
+                                    constraints.maxWidth,
+                                  );
+                                  return Align(
+                                    alignment: Alignment.topCenter,
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: kPageContentMaxWidth,
                                       ),
+                                      child: mode == ProposalViewMode.grid
+                                          ? _ProposalGrid(
+                                              proposals: proposals,
+                                              store: widget.store,
+                                              readOnly: widget.readOnly,
+                                              minCardWidth: _minGridCardWidth,
+                                              focusId: focusId,
+                                              keyFor: _keyFor,
+                                            )
+                                          : _ProposalList(
+                                              proposals: proposals,
+                                              store: widget.store,
+                                              readOnly: widget.readOnly,
+                                              focusId: focusId,
+                                              keyFor: _keyFor,
+                                            ),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
+                      ),
+                    ),
+                  ],
                 ),
         );
       },
@@ -260,6 +285,63 @@ class _ProposalGrid extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// A dismissal-free call to action above the list: rather than making the user tap
+/// Skip on every promotional/automated message one at a time, offer to clear all of
+/// them in one tap. Stays visible (not part of the scrolling list) since it reflects
+/// the whole list's state, not one item's.
+class _SuggestedSkipBanner extends StatelessWidget {
+  final int count;
+  final bool busy;
+  final VoidCallback onSkipAll;
+
+  const _SuggestedSkipBanner({
+    required this.count,
+    required this.busy,
+    required this.onSkipAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.laColors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: LaSpacing.base,
+        vertical: LaSpacing.sm,
+      ),
+      color: colors.backgroundNeutralTertiary,
+      child: Row(
+        children: [
+          Icon(
+            Icons.filter_alt_outlined,
+            size: 18,
+            color: colors.contentNeutralSecondary,
+          ),
+          const SizedBox(width: LaSpacing.x2xs),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? "1 message looks like it doesn't need a reply"
+                  : "$count messages look like they don't need a reply",
+              style: LaTextStyles.bodySm.copyWith(
+                color: colors.contentNeutralSecondary,
+              ),
+            ),
+          ),
+          LaButton(
+            label: 'Skip all',
+            size: LaButtonSize.small,
+            variant: LaButtonVariant.bordered,
+            color: LaButtonColor.neutral,
+            loading: busy,
+            onPressed: onSkipAll,
+          ),
+        ],
       ),
     );
   }

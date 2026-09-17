@@ -209,7 +209,16 @@ func (s *googleSource) Timezone() *time.Location {
 	s.loadedT = true
 	s.loc, _ = time.LoadLocation("Europe/Paris")
 
-	req, err := http.NewRequest(http.MethodGet, "https://www.googleapis.com/calendar/v3/users/me/settings/timezone", nil)
+	// Timezone() isn't part of Source's ctx-taking methods (Busy/AddEvent) -- the
+	// rest of this type's calls are given the caller's own bounded context, but this
+	// one previously used http.NewRequest with no context and no client-level
+	// Timeout at all, so a slow/unresponsive response here could hang indefinitely.
+	// That's not just slow: analyzeEmailMessage holds one of only
+	// analysisConcurrency semaphore slots for as long as this call takes, so a single
+	// stuck request here can eventually starve every other message's analysis too.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/calendar/v3/users/me/settings/timezone", nil)
 	if err != nil {
 		return s.loc
 	}

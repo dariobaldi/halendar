@@ -123,6 +123,59 @@ func TestSendReplyDraft(t *testing.T) {
 	}
 }
 
+func TestReplyRoutesToReplyToWhenPresent(t *testing.T) {
+	ctx := context.Background()
+	mb, im, sm := newMailbox(t)
+
+	// NewSince(ctx, 0) always just establishes a starting point, never returning
+	// anything (see TestReadSearchMarkMove) -- deliver one message first so the
+	// baseline UID it captures is non-zero, or the very next call would be
+	// mistaken for another 0-baseline call instead of a real "what's new" check.
+	im.Deliver(t, "<old@x>", "old@example.com", "Old", "history")
+	_, last, err := mb.NewSince(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A Reply-To distinct from From (the common newsletter/automated-sender case) --
+	// the reply must go there, but the message should still display as being from
+	// the real sender, not silently swapped for the Reply-To address.
+	im.DeliverWithReplyTo(t, "<promo@x>", "Acme Team <noreply@acme.com>", "support@acme.com", "Big sale", "50% off everything")
+	msgs, last, err := mb.NewSince(ctx, last)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("delivering: %d msgs, err=%v", len(msgs), err)
+	}
+	msg := msgs[0]
+	if msg.From != "noreply@acme.com" || msg.FromName != "Acme Team" {
+		t.Fatalf("display sender changed by Reply-To: From=%q FromName=%q", msg.From, msg.FromName)
+	}
+	if msg.ReplyTo != "support@acme.com" {
+		t.Fatalf("ReplyTo not captured: %q", msg.ReplyTo)
+	}
+
+	if _, err := mb.Reply(ctx, msg, "Thanks!"); err != nil {
+		t.Fatal(err)
+	}
+	sent := sm.Mails()
+	if len(sent) != 1 || len(sent[0].To) != 1 || sent[0].To[0] != "support@acme.com" {
+		t.Fatalf("reply should go to Reply-To, got %+v", sent)
+	}
+
+	// No Reply-To at all -- falls back to From, as before.
+	im.Deliver(t, "<plain@x>", "plain@example.com", "Hi", "just saying hi")
+	msgs, _, err = mb.NewSince(ctx, last)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("delivering: %d msgs, err=%v", len(msgs), err)
+	}
+	if _, err := mb.Reply(ctx, msgs[0], "Hi back!"); err != nil {
+		t.Fatal(err)
+	}
+	sent = sm.Mails()
+	if len(sent) != 2 || len(sent[1].To) != 1 || sent[1].To[0] != "plain@example.com" {
+		t.Fatalf("reply without Reply-To should fall back to From, got %+v", sent)
+	}
+}
+
 func TestConfigDerivesSMTP(t *testing.T) {
 	cfg := mail.New(mail.Config{IMAPHost: "imap.gmail.com:993", User: "me@gmail.com", Pass: "x"}).Config()
 	if cfg.SMTPHost != "smtp.gmail.com" || cfg.SMTPPort != 587 || cfg.From != "me@gmail.com" || cfg.IMAPInsecure {

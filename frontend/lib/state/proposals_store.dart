@@ -148,19 +148,41 @@ class ProposalsStore extends ChangeNotifier {
     }
   }
 
-  Future<void> confirm(String id) async {
-    byId(id).status = ProposalStatus.confirmed;
-    notifyListeners();
-    await _postStatus(id, 'confirm');
+  /// Confirms the proposal: the backend sends the drafted reply for real (and books
+  /// the slot, if any). Returns null on success, an error message otherwise -- on
+  /// failure (e.g. the send itself failed) the optimistic "confirmed" status is
+  /// rolled back, since nothing actually went out and the card still needs the
+  /// user's attention.
+  Future<String?> confirm(String id) => _setStatus(id, ProposalStatus.confirmed, 'confirm');
+
+  /// Skips the proposal: archived, nothing sent. Same rollback-on-failure behavior
+  /// as [confirm].
+  Future<String?> reject(String id) => _setStatus(id, ProposalStatus.rejected, 'reject');
+
+  /// Skips every currently-pending proposal the AI suggested skipping (see
+  /// Proposal.suggestedSkip) in one go -- the bulk counterpart to tapping Skip on
+  /// each one individually. Proposals that fail to skip stay in the list (same
+  /// rollback as a single reject) rather than silently vanishing.
+  Future<void> skipAllSuggested() async {
+    final ids = needsAction.where((p) => p.suggestedSkip).map((p) => p.id).toList();
+    await Future.wait(ids.map(reject));
   }
 
-  Future<void> reject(String id) async {
-    byId(id).status = ProposalStatus.rejected;
+  Future<String?> _setStatus(String id, ProposalStatus newStatus, String action) async {
+    final proposal = byId(id);
+    final previousStatus = proposal.status;
+    proposal.status = newStatus;
     notifyListeners();
-    await _postStatus(id, 'reject');
+
+    final error = await _postStatus(id, action);
+    if (error != null) {
+      proposal.status = previousStatus;
+      notifyListeners();
+    }
+    return error;
   }
 
-  Future<void> _postStatus(String id, String action) async {
+  Future<String?> _postStatus(String id, String action) async {
     try {
       final response = await apiRequest(
         'POST',
@@ -169,15 +191,16 @@ class ProposalsStore extends ChangeNotifier {
         null,
         {},
       );
-      if (response.statusCode != 200) {
-        addNotification(
-          title: "Couldn't update proposal",
-          content: response.body,
-          type: "error",
-        );
-      }
+      if (response.statusCode == 200) return null;
+      addNotification(
+        title: "Couldn't update proposal",
+        content: response.body,
+        type: "error",
+      );
+      return response.body;
     } catch (err, stackTrace) {
       devNotification(err: err, stackTrace: stackTrace, title: "ProposalsStore.$action()");
+      return 'Something went wrong. Please try again.';
     }
   }
 
@@ -205,13 +228,15 @@ class ProposalsStore extends ChangeNotifier {
         return;
       }
       if (response.statusCode == 404) {
-        // The model no longer thinks this is a meeting request -- the backend has
-        // already deleted it, so just drop it here too.
+        // Rare: the message (or its account) was removed elsewhere in the meantime.
+        // A re-analysis that just decides it's not a meeting request after all comes
+        // back as a normal 200 with is_meeting_request: false, handled above -- it
+        // still shows up here, just without slots/draft to act on.
         _proposals.removeWhere((p) => p.id == id);
         notifyListeners();
         addNotification(
-          title: "No longer looks like a meeting request",
-          content: "Re-analysis decided this message doesn't need a reply.",
+          title: "This message is no longer available",
+          content: "It may have been removed elsewhere.",
           type: "info",
         );
         return;

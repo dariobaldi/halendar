@@ -46,7 +46,7 @@ func (cfg *config) GetVariables() {
 	cfg.smtp.sender = getEnvString("SMTP_SENDER", "Halendar <no-reply@yourdomain.com>")
 
 	cfg.ollama.baseURL = getEnvString("OLLAMA_BASE_URL", "http://ollama:11434")
-	cfg.ollama.model = getEnvString("OLLAMA_MODEL", "gemma3:1b")
+	cfg.ollama.model = getEnvString("OLLAMA_MODEL", "gemma3:4b")
 
 	// Model used for a user's own Claude API key, once they've connected and
 	// activated one (see internal/claude and cmd/api/ai_settings.go) -- unrelated to

@@ -57,8 +57,19 @@ func NewFakeIMAP(t *testing.T) *FakeIMAP {
 
 // Deliver adds a mail to the inbox.
 func (f *FakeIMAP) Deliver(t *testing.T, id, from, subject, text string) {
-	raw := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n",
-		from, f.User, subject, time.Now().Format(time.RFC1123Z), id, text)
+	f.DeliverWithReplyTo(t, id, from, "", subject, text)
+}
+
+// DeliverWithReplyTo is like Deliver but adds a Reply-To header when replyTo isn't
+// empty, for exercising the case where a reply should be routed somewhere other than
+// From (see mail.Message.ReplyTo).
+func (f *FakeIMAP) DeliverWithReplyTo(t *testing.T, id, from, replyTo, subject, text string) {
+	replyToHeader := ""
+	if replyTo != "" {
+		replyToHeader = "Reply-To: " + replyTo + "\r\n"
+	}
+	raw := fmt.Sprintf("From: %s\r\n%sTo: %s\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n",
+		from, replyToHeader, f.User, subject, time.Now().Format(time.RFC1123Z), id, text)
 	if _, err := f.user.Append("INBOX", bytes.NewReader([]byte(raw)), &imap.AppendOptions{Time: time.Now()}); err != nil {
 		t.Fatal(err)
 	}

@@ -12,12 +12,12 @@ class ProposalsListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ProposalsView(
-      title: 'Proposals',
+      title: 'Messages',
       store: store,
       selector: (s) => s.needsAction,
       emptyState: const EmptyState(
         icon: Icons.inbox_outlined,
-        title: 'No proposals pending',
+        title: 'No messages pending',
         message:
             'New meeting requests detected in your emails will appear '
             'here.',

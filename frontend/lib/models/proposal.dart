@@ -19,6 +19,18 @@ class Proposal {
   final DateTime receivedAt;
   final String emailExcerpt;
 
+  /// False for an imported message that the AI decided isn't actually a meeting
+  /// request -- it still shows up here (so nothing imported is silently hidden) but
+  /// with no slots/draft to act on, just the email itself and the option to skip it.
+  final bool isMeetingRequest;
+
+  /// Set for a non-meeting message that's very likely not worth reading at all -- a
+  /// promotional/automated email, or a sender address that can't receive replies.
+  /// Never true when [isMeetingRequest] is true. Drives a faster, no-confirmation
+  /// skip in the UI instead of the normal one.
+  final bool suggestedSkip;
+  final String skipReason;
+
   /// The sender's proposed times, free or busy.
   final List<TimeSlot> slots;
 
@@ -45,6 +57,9 @@ class Proposal {
     required this.subject,
     required this.receivedAt,
     required this.emailExcerpt,
+    this.isMeetingRequest = true,
+    this.suggestedSkip = false,
+    this.skipReason = '',
     this.slots = const [],
     this.selectedSlot,
     this.needsManualReview = false,
@@ -92,6 +107,9 @@ class Proposal {
           : '(no subject)',
       receivedAt: DateTime.parse(json['received_at']).toLocal(),
       emailExcerpt: json['email_excerpt'] as String? ?? '',
+      isMeetingRequest: json['is_meeting_request'] as bool? ?? true,
+      suggestedSkip: json['suggested_skip'] as bool? ?? false,
+      skipReason: json['skip_reason'] as String? ?? '',
       slots: slots,
       selectedSlot: selectedSlot,
       needsManualReview: json['needs_manual_review'] as bool? ?? false,

@@ -251,30 +251,54 @@ func snippet(text string) string {
 // every candidate date/time proposed. The reference date lets it resolve relative
 // phrasing ("next Tuesday", "tomorrow afternoon") against when the mail arrived.
 //
-// Tuned against gemma3:1b with a small suite of representative emails (see the now-
-// deleted cmd/prompttest harness -- git history has it if this needs revisiting): a
-// worked weekday-math example and two few-shot examples (one accept, one reject)
-// measurably improved both classification accuracy and JSON validity over a plainer
-// version of these instructions. Generated with GenerateDeterministic (temperature 0)
-// -- for this small a model, disabling sampling made a bigger difference than any
-// further prompt wording, fixing most malformed-JSON responses outright.
+// Originally tuned against gemma3:1b (see git history for that version and its
+// harness). Real user testing surfaced 1b false positives on marketing/delivery
+// emails and unreliable French handling severe enough to move to gemma3:4b (see
+// OLLAMA_MODEL) -- re-tuned against 4b with the same now-deleted cmd/prompttest
+// harness, 4 iterations: v1 (this prompt's 1b version, unchanged) scored 8/13 on the
+// harness's suite, already fixing every false-positive case outright; v2 sharpened
+// the false-positive rule with concrete signals (unsubscribe links, a brand/venue
+// signing off, promotional tone) and fixed a lingering open-ended-slots bug; v3 added
+// a past-tense-recap example (fixed) but also a French date-math example that
+// backfired -- the model pattern-matched its literal "+7 days" case instead of
+// generalizing, regressing an already-correct case; v4 (this version) kept the
+// past-tense fix and dropped the harmful French example, landing at 10/13 with no
+// regressions. Remaining known misses: an occasional phantom slot on a genuinely
+// open-ended ask, and weekday-math slipping by a day on some non-English phrasing
+// ("demain") or multi-option emails -- both are model-capability ceilings, not
+// prompt-fixable without further regressions observed during tuning.
+//
+// TASK 3 (category) was added afterward, once "not a meeting request" needed to be
+// more than a dead end -- see Proposal.SuggestedSkip, which uses it (alongside a
+// free, non-AI check on the sender address) to offer a fast, no-confirmation skip for
+// mail that's obviously not worth reading, without silently discarding anything.
+// Spot-checked against 4b on 7 cases from the harness above: 6/7 correct, one
+// personal FYI email mistagged "promotional" instead of "personal" -- doesn't affect
+// requests_participation itself, and just costs that one message an unnecessary (but
+// still dismissible, non-destructive) skip suggestion.
 const eventExtractionPromptTmpl = `You are screening one email received by our user. Today's date is %s (YYYY-MM-DD).
 
 Weekday math example: if today is Monday 2026-09-14, then "tomorrow" = 2026-09-15, "Thursday" or "next Thursday" = 2026-09-17, "next Monday" = 2026-09-21. Always count forward from today.
 
-TASK 1 -- decide requests_participation: true only if the SENDER is personally asking OUR USER (the reader, "you") to attend or schedule a meeting/call/event with them. Answer false for: the sender merely mentioning an event they themselves are attending, a newsletter, marketing email, or automated notification -- even if it contains dates or invites you to "join" a broadcast/webinar.
+TASK 1 -- decide requests_participation: true only if a REAL PERSON is personally asking OUR USER (the reader, "you") to attend or schedule a meeting/call/event with them specifically. Answer false when the sender is a business/brand/venue/service (not a named individual), or the email is announcing something happening rather than asking the reader to a meeting -- these signals mean false even if a specific date/time is mentioned: an unsubscribe link, "book now"/"reserve"/exclamation-heavy promotional tone, a shop/restaurant/company name signing off instead of a person, a delivery/shipping/order notification, or a mass event announcement ("join us", "don't miss"). Also answer false for a past-tense recap or thank-you about something that ALREADY happened ("yesterday", "it was great meeting you", "thanks for today") -- there is nothing left to schedule.
 
-TASK 2 -- only if requests_participation is true, extract every candidate date/time the sender proposed, resolving relative dates against today's date. Each slot needs a "date" and a "start" time. Only set "end" if the sender stated an explicit end time or duration; otherwise omit "end" entirely (do not guess or repeat the start time). If the sender asks an open question with no explicit date/time ("when are you free?"), leave "slots" as an empty array.
+TASK 2 -- only if requests_participation is true, extract every candidate date/time the sender proposed, resolving relative dates against today's date. Each slot needs a "date" and a "start" time. Only set "end" if the sender stated an explicit end time or duration; otherwise omit "end" entirely (do not guess or repeat the start time). If the sender offers multiple options, list each as its own entry in "slots". If the sender asks an open question with no explicit date/time ("when are you free?"), leave "slots" as an empty array.
+
+TASK 3 -- only if requests_participation is false, set "category" to one of: "promotional" (marketing, a sale, an event announcement not addressed to you personally), "automated" (a notification, receipt, delivery update, or other system-generated message), or "personal" (a real person wrote it, just not asking to schedule anything). Leave "category" as an empty string when requests_participation is true.
 
 Respond with ONLY a single JSON object, nothing before or after it -- no markdown fences, no comments, no explanation. Use real values, never the literal example text.
 
-Example 1 (genuine request, today=2026-09-14):
-Email: "Can we do a 30 min call tomorrow at 3pm about the budget?"
-{"requests_participation": true, "title": "Budget call", "location": "", "slots": [{"date": "2026-09-15", "start": "15:00", "end": "15:30"}]}
+Example 1 (genuine request from a named person, today=2026-09-14):
+Email: "Can we do a 30 min call tomorrow at 3pm about the budget? -- Marine"
+{"requests_participation": true, "title": "Budget call", "location": "", "category": "", "slots": [{"date": "2026-09-15", "start": "15:00", "end": "15:30"}]}
 
-Example 2 (not a request -- newsletter):
-Email: "Join our free webinar next Tuesday at 2pm! Register now."
-{"requests_participation": false, "title": "", "location": "", "slots": []}
+Example 2 (not a request -- a venue/business announcing an event, not a personal ask):
+Email: "Don't miss our concert this Friday at 8:30pm! Reserve your table now. -- The Team, Unsubscribe"
+{"requests_participation": false, "title": "", "location": "", "category": "promotional", "slots": []}
+
+Example 3 (not a request -- recap of something already done):
+Email: "Great catching up with you yesterday at 3pm, let's stay in touch! -- Nina"
+{"requests_participation": false, "title": "", "location": "", "category": "personal", "slots": []}
 
 Now analyze this email:
 
@@ -291,6 +315,7 @@ type eventExtraction struct {
 	RequestsParticipation bool            `json:"requests_participation"`
 	Title                 string          `json:"title"`
 	Location              string          `json:"location"`
+	Category              string          `json:"category"`
 	Slots                 []extractedSlot `json:"slots"`
 }
 
@@ -302,6 +327,16 @@ type extractedSlot struct {
 	End   string `json:"end"`
 }
 
+// analysisConcurrency caps how many analyzeEmailMessage calls run at once, across
+// however many are queued together -- a fresh backfill of 100 unread messages on a
+// new account, or a bulk reanalyze-all after switching models. Without this, that
+// many goroutines fire off at once, all racing for the one local Ollama instance:
+// observed in production as scattered "context deadline exceeded" errors once the
+// request queue backed up past each message's 90s budget, not any real fault in the
+// model or the prompt. A local single-model Ollama instance realistically only
+// benefits from a couple of requests in flight at once anyway.
+const analysisConcurrency = 2
+
 // analyzeEmailMessage runs the local AI over a newly-imported message, records
 // whether it's a genuine participation request, and -- when it is -- extracts the
 // candidate time slots, checks each against the calendar, and drafts a reply:
@@ -309,7 +344,14 @@ type extractedSlot struct {
 // notify controls whether a push notification is sent for a newly-found proposal --
 // true for a message seen for the first time, false for a re-analysis (the user
 // already saw it, so re-running the prompt shouldn't notify them again).
+//
+// Blocks until a slot in app.analysisSem is free -- see analysisConcurrency -- so
+// every call site (a live sync, a backfill, a bulk reanalyze) is protected the same
+// way regardless of how many messages it queues up at once.
 func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, body string, notify bool) {
+	app.analysisSem <- struct{}{}
+	defer func() { <-app.analysisSem }()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
@@ -337,26 +379,27 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 		return
 	}
 
+	// An event row is created either way -- even a message that isn't a meeting
+	// request gets one, empty -- so every imported message (not just ones the AI
+	// flagged as an event) has a place in the Messages page and can be skipped from
+	// there. Only an event actually asking to participate gets slots and a drafted
+	// reply.
+	event := data.EmailMessageEvent{EmailMessageID: msg.ID}
 	if hasEvent {
 		calSource, loc := app.userCalendarSource(ctx, userID)
 		slots := app.resolveEventSlots(ctx, calSource, loc, extraction.Slots)
-		event := data.EmailMessageEvent{
-			EmailMessageID:    msg.ID,
-			Title:             firstNonEmpty(extraction.Title, msg.Subject),
-			Location:          extraction.Location,
-			NeedsManualReview: len(slots) == 0, // asked to participate, but no usable time could be pinned down
-			Slots:             slots,
-		}
+		event.Title = firstNonEmpty(extraction.Title, msg.Subject)
+		event.Location = extraction.Location
+		event.NeedsManualReview = len(slots) == 0 // asked to participate, but no usable time could be pinned down
+		event.Slots = slots
 		app.draftEventReply(ctx, client, userID, calSource, loc, msg, &event)
-		if err := app.models.EmailEvents.Upsert(&event); err != nil {
-			app.logger.Error("email analysis: storing extracted event: " + err.Error())
-		} else if notify {
-			app.notifyNewProposal(userID, event, msg)
-		}
-	} else if err := app.models.EmailEvents.DeleteForMessage(msg.ID); err != nil {
-		// Only matters on a re-analysis where a previous pass had wrongly flagged an
-		// event -- harmless no-op otherwise.
-		app.logger.Error("email analysis: clearing stale event: " + err.Error())
+	} else {
+		event.Category = extraction.Category
+	}
+	if err := app.models.EmailEvents.Upsert(&event); err != nil {
+		app.logger.Error("email analysis: storing extracted event: " + err.Error())
+	} else if hasEvent && notify {
+		app.notifyNewProposal(userID, event, msg)
 	}
 
 	app.SendToWsUser(userID, app.retriveWebSocket("halendar"), envelope{"type": "email_messages", "refresh": true})
@@ -477,6 +520,15 @@ func parseEventExtraction(response string) (extraction eventExtraction, ok bool)
 // in loc, dropping any it can't parse, and checks each of the remaining ones against
 // source (nil if the user has no calendar connected -- they're still parsed and kept,
 // just with "unknown" availability).
+// defaultSlotDuration is used whenever the sender didn't state (and the model
+// correctly didn't guess) an end time -- see the loop below. Found via a real user
+// report: the prompt tells the model to omit "end" entirely rather than repeat the
+// start time when no duration is given, but this function used to treat a missing
+// end the same as an unparseable one and silently drop the whole slot -- so a
+// perfectly good extracted date/time (the exact case the prompt was written to
+// produce) ended up looking like nothing had been found at all.
+const defaultSlotDuration = 30 * time.Minute
+
 func (app *app) resolveEventSlots(ctx context.Context, source calendarimport.Source, loc *time.Location, raw []extractedSlot) []data.EmailEventSlot {
 	var slots []data.EmailEventSlot
 	for _, r := range raw {
@@ -484,9 +536,16 @@ func (app *app) resolveEventSlots(ctx context.Context, source calendarimport.Sou
 		if err != nil {
 			continue
 		}
-		end, err := calendar.ParseDate(r.Date+"T"+r.End, loc)
-		if err != nil || !end.After(start) {
-			continue
+
+		// Only trust the model's own end time if it parses AND is actually after
+		// the start -- otherwise (missing, unparseable, or the identical-to-start
+		// bug documented in .env's OLLAMA_MODEL history) fall back to a default
+		// duration rather than dropping a slot we already have a valid start for.
+		end := start.Add(defaultSlotDuration)
+		if r.End != "" {
+			if parsedEnd, err := calendar.ParseDate(r.Date+"T"+r.End, loc); err == nil && parsedEnd.After(start) {
+				end = parsedEnd
+			}
 		}
 
 		slots = append(slots, data.EmailEventSlot{
@@ -508,6 +567,11 @@ func (app *app) checkAvailability(ctx context.Context, source calendarimport.Sou
 	}
 	busy, err := source.Busy(ctx, start, end)
 	if err != nil {
+		// Unlike userCalendarSource's own connection failure (already logged), this
+		// one had no log line at all -- "unknown" looked identical whether there was
+		// no calendar connected or a real API call had just failed, with nothing to
+		// go on to tell the two apart.
+		app.logger.Error("email analysis: checking calendar availability: " + err.Error())
 		return data.SlotAvailabilityUnknown
 	}
 	if busy {
@@ -590,6 +654,12 @@ func (app *app) detectLanguage(ctx context.Context, client aiClient, text string
 // naming the language explicitly (via detectLanguage) fixed it defaulting to English
 // for non-English originals. Generated with GenerateDeterministic for the same
 // consistency reasons as the extraction prompt.
+//
+// Left unchanged in the gemma3:1b -> 4b move: it already scored 5/5 on 4b in the
+// re-tuning harness (correct language, correct outcome, no sign-offs) without any
+// wording changes -- 1b's occasional English-reply-to-French-email failures turned
+// out to be a model-capability gap, not a prompt gap. detectLanguage itself (a
+// separate, much simpler call) scored 4/4 on 4b in the same harness.
 const replyPromptTmpl = `You are the Halendar Assistant, an AI scheduling assistant writing an email on %s's behalf, replying to a message about "%s". The original email is in %s -- write your reply in %s too.
 
 %s

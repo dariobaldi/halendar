@@ -19,7 +19,7 @@ class HistoryScreen extends StatelessWidget {
       emptyState: const EmptyState(
         icon: Icons.history,
         title: 'No history yet',
-        message: 'Confirmed or deleted proposals appear here.',
+        message: 'Confirmed or skipped messages appear here.',
       ),
     );
   }

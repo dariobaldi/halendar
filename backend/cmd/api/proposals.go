@@ -131,9 +131,9 @@ func (app *app) confirmProposalHandler(w http.ResponseWriter, r *http.Request) {
 // frontend is waiting to refresh just this one card.
 //
 // If the model now decides the message isn't a genuine meeting request after all,
-// analyzeEmailMessage deletes the underlying event -- the proposal this ID refers to
-// then no longer exists, and respondUpdatedProposal reports that as a 404, same as if
-// someone else had just deleted it.
+// the proposal stays -- just with is_meeting_request now false and its slots/draft
+// cleared -- rather than disappearing, so re-classifying a message never makes it
+// vanish from the Messages page.
 func (app *app) reanalyzeProposalHandler(w http.ResponseWriter, r *http.Request) {
 	user := app.contextGetUser(r)
 

@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:halendar_front/services/api.dart';
+import 'package:halendar_front/services/auth.dart';
 import 'package:lasuite_ui/lasuite_ui.dart';
 import 'package:provider/provider.dart';
 
@@ -137,14 +141,84 @@ class _SelectableProviderTile extends StatelessWidget {
   }
 }
 
-class _AISettingsView extends StatelessWidget {
+class _AISettingsView extends StatefulWidget {
   const _AISettingsView();
+
+  @override
+  State<_AISettingsView> createState() => _AISettingsViewState();
+}
+
+class _AISettingsViewState extends State<_AISettingsView> {
+  bool _reanalyzingAll = false;
 
   Future<void> _selectProvider(BuildContext context, String provider) async {
     final model = context.read<AISettingsModel>();
     final error = await model.setProvider(provider);
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  Future<void> _confirmReanalyzeAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Re-analyze all messages?'),
+        content: const Text(
+          'Every imported message is re-analyzed with the model currently '
+          'active above. Useful after switching models, or after connecting '
+          'a new API key, so past mail gets a fresh look instead of only new '
+          'mail going forward. This can take a while for a large mailbox.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Re-analyze'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _reanalyzingAll = true);
+    try {
+      final response = await apiRequest(
+        'POST',
+        'v1/email-messages/reanalyze',
+        true,
+        null,
+        {},
+      );
+      if (!mounted) return;
+      if (response.statusCode == 202) {
+        final Map<String, dynamic> data = json.decode(
+          utf8.decode(response.bodyBytes),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Re-analyzing ${data['count']} messages -- the Messages page '
+              'will update as each one finishes.',
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not start re-analysis: ${response.body}')),
+        );
+      }
+    } catch (err, stackTrace) {
+      devNotification(
+        err: err,
+        stackTrace: stackTrace,
+        title: "AISettingsScreen._confirmReanalyzeAll()",
+      );
+    } finally {
+      if (mounted) setState(() => _reanalyzingAll = false);
     }
   }
 
@@ -186,6 +260,34 @@ class _AISettingsView extends StatelessWidget {
                   const SizedBox(height: LaSpacing.sm),
                   _ProviderCard(provider: provider),
                 ],
+                const SizedBox(height: LaSpacing.lg),
+                Text(
+                  'Maintenance',
+                  style: LaTextStyles.labelMd.copyWith(
+                    color: colors.contentNeutralPrimary,
+                  ),
+                ),
+                const SizedBox(height: LaSpacing.x2xs),
+                Card(
+                  child: ListTile(
+                    leading: _reanalyzingAll
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            Icons.refresh,
+                            color: colors.contentNeutralSecondary,
+                          ),
+                    title: const Text('Re-analyze all messages'),
+                    subtitle: const Text(
+                      'Re-run analysis on every imported message with the '
+                      'active model above',
+                    ),
+                    onTap: _reanalyzingAll ? null : _confirmReanalyzeAll,
+                  ),
+                ),
               ],
             ),
     );

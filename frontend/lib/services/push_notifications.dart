@@ -100,11 +100,19 @@ class PushNotificationsService {
   // as an in-app banner via the existing notification system instead. For a
   // native system-style banner even in the foreground, add
   // flutter_local_notifications and show it from here.
+  //
+  // Tapping this banner needs to behave the same as tapping a real system
+  // notification would (see _handleNotificationTap) -- otherwise a proposal
+  // notification that happens to arrive while the app is already open would be the
+  // one case where tapping it doesn't take you to the message.
   void _onForegroundMessage(RemoteMessage message) {
     addNotification(
       title: message.notification?.title ?? 'Halendar',
       content: message.notification?.body ?? '',
       type: 'info',
+      onTap: message.data['type'] == 'proposal'
+          ? () => _handleNotificationTap(message)
+          : null,
     );
   }
 

@@ -176,6 +176,7 @@ void addNotification({
   String imageUrl = "",
   String type = "",
   int duration = 15,
+  VoidCallback? onTap,
 }) {
   AuthService.instance.addNotification(
     HalendarNotification(
@@ -184,6 +185,7 @@ void addNotification({
       imageUrl: imageUrl,
       type: type,
       duration: duration,
+      onTap: onTap,
     ),
   );
 }

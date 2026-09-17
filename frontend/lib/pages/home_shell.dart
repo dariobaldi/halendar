@@ -104,7 +104,7 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.inbox_outlined),
             selectedIcon: Icon(Icons.inbox),
-            label: 'Proposals',
+            label: 'Messages',
           ),
           NavigationDestination(
             icon: Icon(Icons.history_outlined),

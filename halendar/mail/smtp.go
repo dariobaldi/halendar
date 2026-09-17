@@ -66,7 +66,14 @@ func ReplyTo(original Message, text string) Outgoing {
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(subject)), "re:") {
 		subject = "Re: " + subject
 	}
-	return Outgoing{To: []string{original.From}, Subject: subject, Text: text, InReplyTo: original.ID, References: original.References}
+	// The message's own Reply-To header, when it has one, is where the sender wants
+	// replies routed -- not necessarily their own From address (a newsletter or
+	// automated sender is the common case).
+	to := original.ReplyTo
+	if to == "" {
+		to = original.From
+	}
+	return Outgoing{To: []string{to}, Subject: subject, Text: text, InReplyTo: original.ID, References: original.References}
 }
 
 func (m *Mailbox) smtpClient() (*smtp.Client, error) {

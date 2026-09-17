@@ -95,10 +95,16 @@ func (c Config) withDefaults() Config {
 
 // Message is a received email.
 type Message struct {
-	UID         uint32       `json:"uid"`
-	ID          string       `json:"id"` // Message-ID, e.g. <abc@example.com>
-	From        string       `json:"from"`
-	FromName    string       `json:"from_name,omitempty"`
+	UID      uint32 `json:"uid"`
+	ID       string `json:"id"` // Message-ID, e.g. <abc@example.com>
+	From     string `json:"from"`
+	FromName string `json:"from_name,omitempty"`
+	// ReplyTo is where a reply should actually be sent, from the message's Reply-To
+	// header -- empty when there isn't one, in which case a reply goes to From
+	// instead (see ReplyTo the function). Kept separate from From/FromName, which
+	// always describe who actually sent the message, so displaying "who this is
+	// from" and routing "where my reply goes" can't get mixed up.
+	ReplyTo     string       `json:"reply_to,omitempty"`
 	To          []string     `json:"to,omitempty"`
 	Cc          []string     `json:"cc,omitempty"`
 	Subject     string       `json:"subject"`

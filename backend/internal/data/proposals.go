@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,18 +18,29 @@ const (
 	ProposalStatusRejected  = "rejected"
 )
 
-// Proposal is the read shape the frontend's proposal review screen needs: an
-// extracted event joined with its source message, ready to display without further
-// lookups. It's a view over the same email_message_events/email_event_slots tables
-// EmailEventModel writes -- kept separate because the two have different shapes for
-// different purposes (write-time extraction result vs. read-time display+review).
+// Proposal is the read shape the frontend's Messages page needs: an analyzed message
+// joined with its source email, ready to display without further lookups. Every
+// imported, analyzed message gets one of these -- not just ones that turned out to be
+// meeting requests -- so IsMeetingRequest tells the frontend whether to show the
+// extracted slots/draft or just the email itself. It's a view over the same
+// email_message_events/email_event_slots tables EmailEventModel writes -- kept
+// separate because the two have different shapes for different purposes (write-time
+// extraction result vs. read-time display+review).
 type Proposal struct {
-	ID                uuid.UUID        `json:"id"`
-	SenderName        string           `json:"sender_name"`
-	SenderEmail       string           `json:"sender_email"`
-	Subject           string           `json:"subject"`
-	ReceivedAt        time.Time        `json:"received_at"`
-	EmailExcerpt      string           `json:"email_excerpt"`
+	ID               uuid.UUID `json:"id"`
+	SenderName       string    `json:"sender_name"`
+	SenderEmail      string    `json:"sender_email"`
+	Subject          string    `json:"subject"`
+	ReceivedAt       time.Time `json:"received_at"`
+	EmailExcerpt     string    `json:"email_excerpt"`
+	IsMeetingRequest bool      `json:"is_meeting_request"`
+	// SuggestedSkip and SkipReason are set for a non-meeting message that's very
+	// likely not worth reading at all -- a promotional/automated category from the
+	// AI, or a sender address that plainly can't receive a reply -- so the Messages
+	// page can offer a fast, no-confirmation skip instead of the normal one. Never
+	// set for a genuine meeting request, however it was sent.
+	SuggestedSkip     bool             `json:"suggested_skip,omitempty"`
+	SkipReason        string           `json:"skip_reason,omitempty"`
 	Slots             []EmailEventSlot `json:"slots"`
 	SelectedSlotID    *uuid.UUID       `json:"selected_slot_id,omitempty"`
 	NeedsManualReview bool             `json:"needs_manual_review"`
@@ -43,6 +55,47 @@ type Proposal struct {
 	IMAPUID        uint32    `json:"-"`
 	Title          string    `json:"-"`
 	Location       string    `json:"-"`
+	category       string    // the AI's raw category, only used to derive SuggestedSkip
+}
+
+// noReplyPatterns match the local part of a sender address that plainly can't (or
+// isn't meant to) receive a reply -- a strong, free, deterministic signal that costs
+// no AI call, independent of whatever category the AI assigned the message.
+var noReplyPatterns = []string{"no-reply", "noreply", "do-not-reply", "donotreply", "mailer-daemon", "postmaster"}
+
+func isNoReplyAddress(address string) bool {
+	local, _, found := strings.Cut(address, "@")
+	if !found {
+		local = address
+	}
+	local = strings.ToLower(local)
+	for _, pattern := range noReplyPatterns {
+		if strings.Contains(local, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// deriveSuggestedSkip fills in SuggestedSkip/SkipReason for a proposal that isn't a
+// meeting request, from whichever signal applies (checked in order of how confident
+// it is). A genuine meeting request is never suggested for skipping, regardless of
+// the sender address -- e.g. a shared team inbox that happens to look automated.
+func (p *Proposal) deriveSuggestedSkip() {
+	if p.IsMeetingRequest {
+		return
+	}
+	switch {
+	case isNoReplyAddress(p.SenderEmail):
+		p.SuggestedSkip = true
+		p.SkipReason = "Sent from an address that can't receive replies."
+	case p.category == CategoryPromotional:
+		p.SuggestedSkip = true
+		p.SkipReason = "Looks like a promotional email."
+	case p.category == CategoryAutomated:
+		p.SuggestedSkip = true
+		p.SkipReason = "Looks like an automated notification."
+	}
 }
 
 // EffectiveSlot returns the slot to treat as "the one the user is going with": the
@@ -94,7 +147,7 @@ func (m ProposalModel) list(where string, args ...any) ([]Proposal, error) {
 
 	query := `
 		SELECT ev.id, em.from_name, em.from_address, em.subject, em.received_at, em.body,
-			ev.needs_manual_review, COALESCE(ev.response_draft, ''), ev.draft_edited_by_user,
+			em.has_event, ev.needs_manual_review, ev.category, COALESCE(ev.response_draft, ''), ev.draft_edited_by_user,
 			ev.status, ev.selected_slot_id, em.id, em.email_account_id, em.imap_uid, ev.title, ev.location
 		FROM email_message_events ev
 		INNER JOIN email_messages em ON em.id = ev.email_message_id
@@ -113,13 +166,16 @@ func (m ProposalModel) list(where string, args ...any) ([]Proposal, error) {
 	var ids []uuid.UUID
 	for rows.Next() {
 		p := Proposal{Slots: []EmailEventSlot{}} // marshals as [] rather than null when there are none
+		var isMeetingRequest sql.NullBool
 		if err := rows.Scan(
 			&p.ID, &p.SenderName, &p.SenderEmail, &p.Subject, &p.ReceivedAt, &p.EmailExcerpt,
-			&p.NeedsManualReview, &p.ResponseDraft, &p.DraftEditedByUser, &p.Status, &p.SelectedSlotID,
+			&isMeetingRequest, &p.NeedsManualReview, &p.category, &p.ResponseDraft, &p.DraftEditedByUser, &p.Status, &p.SelectedSlotID,
 			&p.EmailMessageID, &p.EmailAccountID, &p.IMAPUID, &p.Title, &p.Location,
 		); err != nil {
 			return nil, err
 		}
+		p.IsMeetingRequest = isMeetingRequest.Valid && isMeetingRequest.Bool
+		p.deriveSuggestedSkip()
 		proposals = append(proposals, p)
 		ids = append(ids, p.ID)
 	}

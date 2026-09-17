@@ -107,6 +107,7 @@ type app struct {
 	websockets        map[string]*websocket.Hub
 	wg                sync.WaitGroup
 	summaryUpdateCh   chan struct{}
+	analysisSem       chan struct{} // caps concurrent analyzeEmailMessage calls, see its doc comment
 }
 
 func main() {
@@ -213,6 +214,7 @@ func main() {
 		emailProviders:    emailProviders,
 		calendarProviders: calendarProviders,
 		encryptionKey:     encryptionKey,
+		analysisSem:       make(chan struct{}, analysisConcurrency),
 	}
 
 	app.backgroudProcess()

@@ -67,9 +67,10 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/calendar-accounts/caldav", app.requirePermission(UserLevel, app.connectCaldavCalendarHandler))
 	router.HandlerFunc(http.MethodDelete, "/v1/calendar-accounts/:id", app.requirePermission(UserLevel, app.deleteCalendarAccountHandler))
 
-	// Proposals: the extracted-event review screen (email + slots + calendar
-	// availability + drafted reply). Sending/booking isn't wired up yet -- confirm
-	// and reject just move a proposal to "history" for now.
+	// Proposals: the Messages page. Covers every imported, analyzed message, not
+	// just ones that turned out to be meeting requests (see IsMeetingRequest) --
+	// confirm sends the drafted reply (and books the slot, if any), reject just
+	// archives it ("skip") with nothing sent.
 	router.HandlerFunc(http.MethodGet, "/v1/proposals", app.requirePermission(UserLevel, app.listProposalsHandler))
 	router.HandlerFunc(http.MethodPatch, "/v1/proposals/:id/slot", app.requirePermission(UserLevel, app.selectProposalSlotHandler))
 	router.HandlerFunc(http.MethodPatch, "/v1/proposals/:id/draft", app.requirePermission(UserLevel, app.updateProposalDraftHandler))

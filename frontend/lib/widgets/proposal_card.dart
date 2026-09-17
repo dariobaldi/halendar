@@ -10,7 +10,7 @@ import 'status_badge.dart';
 import 'time_slot_tile.dart';
 
 /// Everything a proposal needs is right here: the email, the proposed
-/// slots, the draft reply, and the three actions (Send / Edit / Delete).
+/// slots, the draft reply, and the three actions (Send / Edit / Skip).
 /// No separate screen to open first -- this card *is* the interaction,
 /// the way an inline calendar invite or a push notification lets you
 /// act without a detour through a detail view.
@@ -37,6 +37,7 @@ class _ProposalCardState extends State<ProposalCard> {
   final FocusNode _draftFocus = FocusNode();
   bool _editingDraft = false;
   bool _reanalyzing = false;
+  bool _sending = false;
   late bool _expanded;
 
   @override
@@ -122,16 +123,24 @@ class _ProposalCardState extends State<ProposalCard> {
       ],
     );
     if (confirmed == true && mounted) {
-      widget.store.confirm(proposal.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            slot == null
-                ? 'Reply sent.'
-                : 'Reply sent. Event added to your calendar.',
+      // Wait for the real send to actually succeed before claiming it did --
+      // confirm() rolls the optimistic "confirmed" status back on failure, so on
+      // error the card just goes back to showing its normal actions instead of
+      // being stuck on a misleading "sent" state.
+      setState(() => _sending = true);
+      final error = await widget.store.confirm(proposal.id);
+      if (mounted) setState(() => _sending = false);
+      if (error == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              slot == null
+                  ? 'Reply sent.'
+                  : 'Reply sent. Event added to your calendar.',
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -139,13 +148,13 @@ class _ProposalCardState extends State<ProposalCard> {
     final colors = context.laColors;
     final confirmed = await showLaModal<bool>(
       context: context,
-      title: 'Delete this proposal?',
+      title: 'Skip this message?',
       size: LaModalSize.small,
       builder: (context) => Padding(
         padding: const EdgeInsets.only(bottom: LaSpacing.base),
         child: Text(
           'No email will be sent and no event will be created. The '
-          'proposal will be archived.',
+          'message will be archived.',
           style: LaTextStyles.bodySm.copyWith(
             color: colors.contentNeutralSecondary,
           ),
@@ -159,7 +168,7 @@ class _ProposalCardState extends State<ProposalCard> {
           onPressed: () => Navigator.pop(context, false),
         ),
         LaButton(
-          label: 'Delete',
+          label: 'Skip',
           color: LaButtonColor.error,
           onPressed: () => Navigator.pop(context, true),
         ),
@@ -168,6 +177,12 @@ class _ProposalCardState extends State<ProposalCard> {
     if (confirmed == true && mounted) {
       widget.store.reject(widget.proposal.id);
     }
+  }
+
+  /// Skips a suggested-skip proposal immediately, with no confirmation dialog --
+  /// see the "Skip" button next to it for why that's fine here specifically.
+  void _quickSkip() {
+    widget.store.reject(widget.proposal.id);
   }
 
   Future<void> _reanalyze() async {
@@ -207,7 +222,13 @@ class _ProposalCardState extends State<ProposalCard> {
           : 'Confirmed for ${formatSlot(proposal.selectedSlot!)}';
     }
     if (proposal.status == ProposalStatus.rejected) {
-      return 'Deleted';
+      return 'Skipped';
+    }
+    if (proposal.suggestedSkip) {
+      return 'Suggested: skip';
+    }
+    if (!proposal.isMeetingRequest) {
+      return 'Not a meeting request';
     }
     if (proposal.needsManualReview) {
       return 'Needs manual review';
@@ -442,6 +463,7 @@ class _ProposalCardState extends State<ProposalCard> {
               label: 'Send',
               icon: const Icon(Icons.send),
               fullWidth: true,
+              loading: _sending,
               onPressed: _confirmSend,
             ),
           ),
@@ -455,15 +477,15 @@ class _ProposalCardState extends State<ProposalCard> {
               variant: LaButtonVariant.tertiary,
               color: LaButtonColor.neutral,
               size: LaButtonSize.small,
-              onPressed: _startEditing,
+              onPressed: _sending ? null : _startEditing,
             ),
             const SizedBox(width: LaSpacing.x2xs),
             LaButton(
-              label: 'Delete',
+              label: 'Skip',
               variant: LaButtonVariant.tertiary,
               color: LaButtonColor.error,
               size: LaButtonSize.small,
-              onPressed: _confirmDelete,
+              onPressed: _sending ? null : _confirmDelete,
             ),
           ],
         ),
@@ -483,7 +505,7 @@ class _ProposalCardState extends State<ProposalCard> {
     }
     return const LaAlert(
       type: LaVariant.neutral,
-      message: 'Deleted: no email was sent.',
+      message: 'Skipped: no email was sent.',
     );
   }
 
@@ -497,6 +519,65 @@ class _ProposalCardState extends State<ProposalCard> {
         if (widget.readOnly) ...[
           const SizedBox(height: LaSpacing.xs),
           _readOnlyNote(),
+        ] else if (proposal.suggestedSkip) ...[
+          const SizedBox(height: LaSpacing.xs),
+          LaAlert(
+            type: LaVariant.neutral,
+            message: '${proposal.skipReason} Probably safe to skip -- no '
+                'confirmation needed, nothing is sent either way.',
+          ),
+          const SizedBox(height: LaSpacing.xs),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              LaButton(
+                label: 'Open in Mail',
+                icon: const Icon(Icons.open_in_new),
+                variant: LaButtonVariant.bordered,
+                color: LaButtonColor.neutral,
+                onPressed: _openInMailApp,
+              ),
+              const SizedBox(width: LaSpacing.x2xs),
+              LaButton(
+                label: 'Skip',
+                icon: const Icon(Icons.done),
+                color: LaButtonColor.error,
+                // Suggested-skip mail already passed two checks (a free sender-address
+                // heuristic, then the AI's own classification) -- an extra confirmation
+                // dialog here would just be friction for the exact case we built this
+                // to remove. Still fully reversible: it only archives to History,
+                // nothing is sent or deleted.
+                onPressed: _quickSkip,
+              ),
+            ],
+          ),
+        ] else if (!proposal.isMeetingRequest) ...[
+          const SizedBox(height: LaSpacing.xs),
+          const LaAlert(
+            type: LaVariant.neutral,
+            message: "This doesn't look like a meeting request -- there's "
+                'nothing to schedule or reply to here.',
+          ),
+          const SizedBox(height: LaSpacing.xs),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              LaButton(
+                label: 'Open in Mail',
+                icon: const Icon(Icons.open_in_new),
+                variant: LaButtonVariant.bordered,
+                color: LaButtonColor.neutral,
+                onPressed: _openInMailApp,
+              ),
+              const SizedBox(width: LaSpacing.x2xs),
+              LaButton(
+                label: 'Skip',
+                variant: LaButtonVariant.tertiary,
+                color: LaButtonColor.error,
+                onPressed: _confirmDelete,
+              ),
+            ],
+          ),
         ] else ...[
           if (proposal.needsManualReview) ...[
             const SizedBox(height: LaSpacing.xs),

@@ -288,7 +288,7 @@ func fetch(c *imapclient.Client, set imap.NumSet) ([]Message, error) {
 			msg.From, msg.FromName = env.From[0].Addr(), env.From[0].Name
 		}
 		if len(env.ReplyTo) > 0 && env.ReplyTo[0].Addr() != "" {
-			msg.From = env.ReplyTo[0].Addr()
+			msg.ReplyTo = env.ReplyTo[0].Addr()
 		}
 		for _, addr := range env.To {
 			msg.To = append(msg.To, addr.Addr())
