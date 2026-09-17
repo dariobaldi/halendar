@@ -85,6 +85,10 @@ func (app *app) requestsStatsHandler(w http.ResponseWriter, r *http.Request) {
 			stat.MaxMS = ms
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
 
 	// Finalize
 	statsList := []*Stats{}
