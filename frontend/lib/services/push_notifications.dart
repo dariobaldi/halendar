@@ -3,9 +3,17 @@ import 'dart:convert';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'api.dart';
 import 'auth.dart';
+
+const _androidNotificationChannel = AndroidNotificationChannel(
+  'proposals',
+  'Meeting proposals',
+  description: 'New meeting requests detected in your inbox.',
+  importance: Importance.high,
+);
 
 /// Wires this device up to receive push notifications: initializes Firebase,
 /// requests notification permission, and keeps the backend's record of this
@@ -19,6 +27,7 @@ class PushNotificationsService {
   static final instance = PushNotificationsService._();
 
   bool _initialized = false;
+  final _localNotifications = FlutterLocalNotificationsPlugin();
 
   /// Set whenever a notification is tapped and carries a proposal to jump to --
   /// tapping works whether the app was backgrounded or fully closed, so this needs
@@ -35,6 +44,7 @@ class PushNotificationsService {
     try {
       if (!_initialized) {
         await Firebase.initializeApp();
+        await _initLocalNotifications();
 
         final settings = await FirebaseMessaging.instance.requestPermission();
         if (settings.authorizationStatus == AuthorizationStatus.denied) {
@@ -75,10 +85,35 @@ class PushNotificationsService {
   // meeting request's notification (see notifyNewProposal in the Go backend) --
   // HomeShell picks this up to switch to the Proposals tab and focus that card.
   void _handleNotificationTap(RemoteMessage message) {
-    final proposalId = message.data['proposal_id'];
+    _setPendingProposalId(message.data['proposal_id']);
+  }
+
+  void _setPendingProposalId(Object? proposalId) {
     if (proposalId is String && proposalId.isNotEmpty) {
       pendingProposalId.value = proposalId;
     }
+  }
+
+  // Registers the native Android notification channel used for proposal
+  // pushes and wires up tap handling for notifications shown by
+  // _onForegroundMessage below (tapping a system notification for a
+  // backgrounded/closed app is handled separately, via onMessageOpenedApp /
+  // getInitialMessage).
+  Future<void> _initLocalNotifications() async {
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(_androidNotificationChannel);
+
+    await _localNotifications.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+      onDidReceiveNotificationResponse: (response) {
+        _setPendingProposalId(response.payload);
+      },
+    );
   }
 
   Future<void> _sendTokenToBackend(String token) async {
@@ -96,22 +131,37 @@ class PushNotificationsService {
   }
 
   // FCM does not display a system notification while the app is in the
-  // foreground (by design, so the app can decide how to present it) — show it
-  // as an in-app banner via the existing notification system instead. For a
-  // native system-style banner even in the foreground, add
-  // flutter_local_notifications and show it from here.
+  // foreground (by design, so the app can decide how to present it) -- show it
+  // as a native Android notification ourselves via flutter_local_notifications
+  // instead, so the experience matches a backgrounded/closed app exactly.
   //
-  // Tapping this banner needs to behave the same as tapping a real system
-  // notification would (see _handleNotificationTap) -- otherwise a proposal
-  // notification that happens to arrive while the app is already open would be the
-  // one case where tapping it doesn't take you to the message.
-  void _onForegroundMessage(RemoteMessage message) {
-    addNotification(
-      title: message.notification?.title ?? 'Halendar',
-      content: message.notification?.body ?? '',
-      type: 'info',
-      onTap: message.data['type'] == 'proposal'
-          ? () => _handleNotificationTap(message)
+  // Tapping it goes through onDidReceiveNotificationResponse (see
+  // _initLocalNotifications), which needs to behave the same as tapping a
+  // real system notification would (see _handleNotificationTap) -- otherwise
+  // a proposal notification that happens to arrive while the app is already
+  // open would be the one case where tapping it doesn't take you to the
+  // message.
+  Future<void> _onForegroundMessage(RemoteMessage message) async {
+    final notification = message.notification;
+    if (notification == null) return;
+
+    await _localNotifications.show(
+      // Android notification ids are 32-bit; a plain object hashCode isn't
+      // guaranteed to fit, so derive one from the clock instead.
+      id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      title: notification.title ?? 'Halendar',
+      body: notification.body ?? '',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidNotificationChannel.id,
+          _androidNotificationChannel.name,
+          channelDescription: _androidNotificationChannel.description,
+          importance: _androidNotificationChannel.importance,
+          priority: Priority.high,
+        ),
+      ),
+      payload: message.data['type'] == 'proposal'
+          ? message.data['proposal_id']
           : null,
     );
   }

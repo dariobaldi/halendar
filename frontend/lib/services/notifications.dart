@@ -9,11 +9,6 @@ class HalendarNotification {
   final String type;
   final int duration;
 
-  /// Set for a push notification that arrived while the app was already open --
-  /// FCM doesn't show a system-tray notification in that case (see
-  /// PushNotificationsService._onForegroundMessage), so this in-app banner is the
-  /// only "notification" there is to tap, and should behave the same as tapping a
-  /// system one would have.
   final VoidCallback? onTap;
 
   HalendarNotification({
