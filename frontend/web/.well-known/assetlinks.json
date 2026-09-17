@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ar.halend.app",
+      "sha256_cert_fingerprints": [
+        "D6:63:38:1C:57:B7:0B:C4:67:A5:12:26:6A:C6:2E:46:9B:08:CD:CC:8C:AB:C5:45:8D:86:02:CE:5C:E2:FC:B0"
+      ]
+    }
+  }
+]

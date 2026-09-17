@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.ar.halend.app",
+        "paths": ["*"]
+      }
+    ]
+  }
+}

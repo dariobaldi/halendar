@@ -1,4 +1,4 @@
-package com.example.halendar_front
+package ar.halend.app
 
 import io.flutter.embedding.android.FlutterActivity
 

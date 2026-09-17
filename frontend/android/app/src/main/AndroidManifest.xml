@@ -27,6 +27,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- App Links: after connecting an email/calendar account, the backend
+                 sends the OAuth browser tab here so the OS reopens this app instead of
+                 leaving the user in the browser. Requires halend.ar to serve
+                 /.well-known/assetlinks.json matching this app's signing certificate
+                 (see frontend/web/.well-known/assetlinks.json) -- autoVerify fails
+                 silently otherwise, and links just open in the browser as before. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="halend.ar"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
