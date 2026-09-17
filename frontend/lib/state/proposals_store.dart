@@ -180,4 +180,49 @@ class ProposalsStore extends ChangeNotifier {
       devNotification(err: err, stackTrace: stackTrace, title: "ProposalsStore.$action()");
     }
   }
+
+  /// Re-runs AI analysis on this proposal's source message on demand -- e.g. right
+  /// after switching to Claude, or to retry a bad extraction. Runs on the backend's
+  /// own time (an LLM call, not instant), so callers should show a loading state
+  /// rather than expect this to resolve immediately.
+  Future<void> reanalyze(String id) async {
+    try {
+      final response = await apiRequest(
+        'POST',
+        'v1/proposals/$id/reanalyze',
+        true,
+        null,
+        {},
+      );
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(
+          utf8.decode(response.bodyBytes),
+        );
+        final updated = Proposal.fromJson(data['proposal']);
+        final index = _proposals.indexWhere((p) => p.id == id);
+        if (index != -1) _proposals[index] = updated;
+        notifyListeners();
+        return;
+      }
+      if (response.statusCode == 404) {
+        // The model no longer thinks this is a meeting request -- the backend has
+        // already deleted it, so just drop it here too.
+        _proposals.removeWhere((p) => p.id == id);
+        notifyListeners();
+        addNotification(
+          title: "No longer looks like a meeting request",
+          content: "Re-analysis decided this message doesn't need a reply.",
+          type: "info",
+        );
+        return;
+      }
+      addNotification(
+        title: "Couldn't re-analyze",
+        content: response.body,
+        type: "error",
+      );
+    } catch (err, stackTrace) {
+      devNotification(err: err, stackTrace: stackTrace, title: "ProposalsStore.reanalyze()");
+    }
+  }
 }

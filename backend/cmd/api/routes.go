@@ -75,6 +75,7 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPatch, "/v1/proposals/:id/draft", app.requirePermission(UserLevel, app.updateProposalDraftHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/proposals/:id/confirm", app.requirePermission(UserLevel, app.confirmProposalHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/proposals/:id/reject", app.requirePermission(UserLevel, app.rejectProposalHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/proposals/:id/reanalyze", app.requirePermission(UserLevel, app.reanalyzeProposalHandler))
 
 	// Calendar
 	router.HandlerFunc(http.MethodGet, "/v1/calendar/health", app.requirePermission(UserLevel, app.calendarHealthHandler))

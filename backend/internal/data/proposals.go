@@ -36,8 +36,9 @@ type Proposal struct {
 	DraftEditedByUser bool             `json:"draft_edited_by_user"`
 	Status            string           `json:"status"`
 
-	// Backend-only, needed to actually send the reply and book the event -- not
-	// something the frontend has any use for.
+	// Backend-only, needed to actually send the reply, book the event, and re-run
+	// analysis -- not something the frontend has any use for.
+	EmailMessageID uuid.UUID `json:"-"`
 	EmailAccountID uuid.UUID `json:"-"`
 	IMAPUID        uint32    `json:"-"`
 	Title          string    `json:"-"`
@@ -94,7 +95,7 @@ func (m ProposalModel) list(where string, args ...any) ([]Proposal, error) {
 	query := `
 		SELECT ev.id, em.from_name, em.from_address, em.subject, em.received_at, em.body,
 			ev.needs_manual_review, COALESCE(ev.response_draft, ''), ev.draft_edited_by_user,
-			ev.status, ev.selected_slot_id, em.email_account_id, em.imap_uid, ev.title, ev.location
+			ev.status, ev.selected_slot_id, em.id, em.email_account_id, em.imap_uid, ev.title, ev.location
 		FROM email_message_events ev
 		INNER JOIN email_messages em ON em.id = ev.email_message_id
 		INNER JOIN email_accounts ea ON ea.id = em.email_account_id
@@ -115,7 +116,7 @@ func (m ProposalModel) list(where string, args ...any) ([]Proposal, error) {
 		if err := rows.Scan(
 			&p.ID, &p.SenderName, &p.SenderEmail, &p.Subject, &p.ReceivedAt, &p.EmailExcerpt,
 			&p.NeedsManualReview, &p.ResponseDraft, &p.DraftEditedByUser, &p.Status, &p.SelectedSlotID,
-			&p.EmailAccountID, &p.IMAPUID, &p.Title, &p.Location,
+			&p.EmailMessageID, &p.EmailAccountID, &p.IMAPUID, &p.Title, &p.Location,
 		); err != nil {
 			return nil, err
 		}

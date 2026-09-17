@@ -124,6 +124,65 @@ func (app *app) confirmProposalHandler(w http.ResponseWriter, r *http.Request) {
 	app.respondUpdatedProposal(w, r, id, user.ID)
 }
 
+// reanalyzeProposalHandler re-runs AI analysis on a single proposal's source message
+// on demand -- e.g. right after switching to Claude, or to retry a bad extraction --
+// without waiting for the account-wide "reanalyze everything" pass. Runs
+// synchronously (unlike the bulk endpoint's backgrounded goroutines) since the
+// frontend is waiting to refresh just this one card.
+//
+// If the model now decides the message isn't a genuine meeting request after all,
+// analyzeEmailMessage deletes the underlying event -- the proposal this ID refers to
+// then no longer exists, and respondUpdatedProposal reports that as a 404, same as if
+// someone else had just deleted it.
+func (app *app) reanalyzeProposalHandler(w http.ResponseWriter, r *http.Request) {
+	user := app.contextGetUser(r)
+
+	id, err := app.readIDParam(r)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	proposal, err := app.models.Proposals.GetByID(id, user.ID)
+	if err != nil {
+		app.respondToProposalUpdateError(w, r, err)
+		return
+	}
+
+	// The stored body covers everything imported since body storage was added;
+	// older messages need a live re-fetch, same fallback reanalyzeEmailMessagesHandler
+	// uses for the bulk pass.
+	body := proposal.EmailExcerpt
+	if body == "" {
+		account, err := app.models.EmailAccounts.Get(proposal.EmailAccountID, user.ID)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+		mailbox, err := app.connectMailbox(r.Context(), *account)
+		if err != nil {
+			app.badRequestResponse(w, r, fmt.Errorf("connecting mailbox: %w", err))
+			return
+		}
+		full, err := mailbox.Read(r.Context(), proposal.IMAPUID)
+		if err != nil {
+			app.badRequestResponse(w, r, fmt.Errorf("reading original message: %w", err))
+			return
+		}
+		body = full.Text
+	}
+
+	msg := data.EmailMessage{
+		ID:         proposal.EmailMessageID,
+		Subject:    proposal.Subject,
+		ReceivedAt: proposal.ReceivedAt,
+		Body:       body,
+	}
+	app.analyzeEmailMessage(user.ID, msg, body, false)
+
+	app.respondUpdatedProposal(w, r, id, user.ID)
+}
+
 // rejectProposalHandler marks a proposal rejected (the frontend's "Delete"): archived,
 // nothing sent, no event booked.
 func (app *app) rejectProposalHandler(w http.ResponseWriter, r *http.Request) {

@@ -36,6 +36,7 @@ class _ProposalCardState extends State<ProposalCard> {
   late TextEditingController _draftController;
   final FocusNode _draftFocus = FocusNode();
   bool _editingDraft = false;
+  bool _reanalyzing = false;
   late bool _expanded;
 
   @override
@@ -169,6 +170,15 @@ class _ProposalCardState extends State<ProposalCard> {
     }
   }
 
+  Future<void> _reanalyze() async {
+    setState(() => _reanalyzing = true);
+    await widget.store.reanalyze(widget.proposal.id);
+    // The proposal may have been removed (no longer a meeting request) or replaced
+    // with a fresh instance -- either way this State object might outlive it, so
+    // guard the final setState.
+    if (mounted) setState(() => _reanalyzing = false);
+  }
+
   Future<void> _openInMailApp() async {
     final proposal = widget.proposal;
     final uri = Uri(
@@ -275,6 +285,42 @@ class _ProposalCardState extends State<ProposalCard> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   StatusBadge(proposal: proposal),
+                  if (!widget.readOnly) ...[
+                    const SizedBox(width: LaSpacing.x2xs),
+                    ClipOval(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _reanalyzing ? null : _reanalyze,
+                          hoverColor: colors.backgroundBrandTertiaryHover,
+                          splashColor: colors.backgroundBrandSecondary,
+                          child: Padding(
+                            padding: const EdgeInsets.all(LaSpacing.x4xs),
+                            child: _reanalyzing
+                                ? SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(3),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: colors.contentNeutralTertiary,
+                                      ),
+                                    ),
+                                  )
+                                : Tooltip(
+                                    message: 'Re-run AI analysis',
+                                    child: Icon(
+                                      Icons.refresh,
+                                      size: 22,
+                                      color: colors.contentNeutralTertiary,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: LaSpacing.x2xs),
                   ClipOval(
                     child: Material(
