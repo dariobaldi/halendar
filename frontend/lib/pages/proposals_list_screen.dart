@@ -5,26 +5,68 @@ import '../state/proposals_store.dart';
 import '../widgets/proposal_card.dart';
 import '../widgets/theme_toggle_button.dart';
 
-class ProposalsListScreen extends StatelessWidget {
+class ProposalsListScreen extends StatefulWidget {
   final ProposalsStore store;
 
   const ProposalsListScreen({super.key, required this.store});
 
   @override
+  State<ProposalsListScreen> createState() => _ProposalsListScreenState();
+}
+
+class _ProposalsListScreenState extends State<ProposalsListScreen> {
+  // GlobalKeys (rather than plain ValueKeys) so a specific card's rendered
+  // BuildContext can be found later, to scroll it into view on a notification tap.
+  final Map<String, GlobalKey> _cardKeys = {};
+
+  GlobalKey _keyFor(String id) => _cardKeys.putIfAbsent(id, () => GlobalKey());
+
+  @override
+  void initState() {
+    super.initState();
+    widget.store.addListener(_maybeScrollToFocused);
+    _maybeScrollToFocused();
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_maybeScrollToFocused);
+    super.dispose();
+  }
+
+  void _maybeScrollToFocused() {
+    final id = widget.store.focusProposalId;
+    if (id == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _cardKeys[id]?.currentContext;
+      if (ctx == null) {
+        return; // not rendered yet (still fetching) -- the next rebuild retries
+      }
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        alignment: 0.1,
+      );
+      widget.store.clearFocusQuietly();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: store,
+      animation: widget.store,
       builder: (context, _) {
-        final proposals = store.needsAction;
+        final proposals = widget.store.needsAction;
+        final focusId = widget.store.focusProposalId;
         return Scaffold(
           appBar: AppBar(
             title: const Text('Proposals'),
             actions: const [ThemeToggleButton()],
           ),
-          body: store.fetching && proposals.isEmpty
+          body: widget.store.fetching && proposals.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
-                  onRefresh: store.fetch,
+                  onRefresh: widget.store.fetch,
                   child: proposals.isEmpty
                       ? const _EmptyState()
                       : ListView.separated(
@@ -35,10 +77,12 @@ class ProposalsListScreen extends StatelessWidget {
                           itemBuilder: (context, index) {
                             final proposal = proposals[index];
                             return ProposalCard(
-                              key: ValueKey(proposal.id),
+                              key: _keyFor(proposal.id),
                               proposal: proposal,
-                              store: store,
-                              initiallyExpanded: index == 0,
+                              store: widget.store,
+                              initiallyExpanded: focusId != null
+                                  ? proposal.id == focusId
+                                  : index == 0,
                             );
                           },
                         ),

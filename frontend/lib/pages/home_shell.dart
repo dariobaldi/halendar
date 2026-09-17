@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth.dart';
 import '../services/notifications.dart';
+import '../services/push_notifications.dart';
 import '../state/proposals_store.dart';
 import 'history_screen.dart';
 import 'proposals_list_screen.dart';
@@ -24,12 +25,29 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _store.init();
+    PushNotificationsService.pendingProposalId.addListener(
+      _handlePendingProposalTap,
+    );
+    // Covers a cold start: the tap may have already been recorded before this
+    // widget (and its listener above) existed.
+    _handlePendingProposalTap();
   }
 
   @override
   void dispose() {
+    PushNotificationsService.pendingProposalId.removeListener(
+      _handlePendingProposalTap,
+    );
     _store.end();
     super.dispose();
+  }
+
+  void _handlePendingProposalTap() {
+    final id = PushNotificationsService.pendingProposalId.value;
+    if (id == null) return;
+    PushNotificationsService.pendingProposalId.value = null;
+    setState(() => _index = 0);
+    _store.focusOn(id);
   }
 
   @override

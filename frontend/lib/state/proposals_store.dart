@@ -35,6 +35,25 @@ class ProposalsStore extends ChangeNotifier {
 
   Proposal byId(String id) => _proposals.firstWhere((p) => p.id == id);
 
+  /// Set once, right after a notification tap, to tell ProposalsListScreen which
+  /// card to expand and scroll to. Read once by the next build, then cleared
+  /// quietly (see [clearFocusQuietly]) rather than left to keep forcing that one
+  /// card open on every future rebuild.
+  String? focusProposalId;
+
+  void focusOn(String id) {
+    focusProposalId = id;
+    notifyListeners();
+  }
+
+  /// Clears the focus without notifying listeners, so the card that was just
+  /// expanded because of it doesn't immediately collapse again -- only the next
+  /// independent rebuild (a refresh, a new proposal arriving, ...) will stop
+  /// treating it as forced-open.
+  void clearFocusQuietly() {
+    focusProposalId = null;
+  }
+
   void init() {
     fetch();
     _ws = AuthService.instance.ws.stream.listen((message) {

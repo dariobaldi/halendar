@@ -48,6 +48,17 @@ class _ProposalCardState extends State<ProposalCard> {
   }
 
   @override
+  void didUpdateWidget(covariant ProposalCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A card already on screen doesn't get initState re-run -- this is what makes
+    // e.g. a notification tap's "expand and scroll to this one" request take effect
+    // on a card that was already rendered (collapsed) before the tap happened.
+    if (widget.initiallyExpanded != oldWidget.initiallyExpanded) {
+      setState(() => _expanded = widget.initiallyExpanded);
+    }
+  }
+
+  @override
   void dispose() {
     _draftController.dispose();
     _draftFocus.dispose();

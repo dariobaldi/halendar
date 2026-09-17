@@ -20,6 +20,12 @@ class PushNotificationsService {
 
   bool _initialized = false;
 
+  /// Set whenever a notification is tapped and carries a proposal to jump to --
+  /// tapping works whether the app was backgrounded or fully closed, so this needs
+  /// to survive until whatever UI is ready (HomeShell may not exist yet at the
+  /// moment a cold-start tap is detected) reads and clears it.
+  static final ValueNotifier<String?> pendingProposalId = ValueNotifier(null);
+
   /// Call once a user is signed in (the backend scopes devices to a user, so
   /// there's nothing to register before that). Safe to call again on every
   /// login — Firebase/listener setup only happens once per app run.
@@ -37,7 +43,18 @@ class PushNotificationsService {
 
         FirebaseMessaging.instance.onTokenRefresh.listen(_sendTokenToBackend);
         FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+        // The app was backgrounded (not closed) and got brought back to the
+        // foreground by a notification tap.
+        FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
         _initialized = true;
+
+        // The app was fully closed and this tap is what launched it -- checked
+        // once, right after the listeners above are in place.
+        final initialMessage = await FirebaseMessaging.instance
+            .getInitialMessage();
+        if (initialMessage != null) {
+          _handleNotificationTap(initialMessage);
+        }
       }
 
       final token = await FirebaseMessaging.instance.getToken();
@@ -51,6 +68,16 @@ class PushNotificationsService {
         title: "PushNotificationsService.registerForUser()",
         showInScreen: false,
       );
+    }
+  }
+
+  // The backend attaches {"type": "proposal", "proposal_id": "..."} to a new
+  // meeting request's notification (see notifyNewProposal in the Go backend) --
+  // HomeShell picks this up to switch to the Proposals tab and focus that card.
+  void _handleNotificationTap(RemoteMessage message) {
+    final proposalId = message.data['proposal_id'];
+    if (proposalId is String && proposalId.isNotEmpty) {
+      pendingProposalId.value = proposalId;
     }
   }
 

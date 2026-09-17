@@ -10,6 +10,7 @@ import (
 
 	"github.com/dariobaldi/halendar_back/internal/calendarimport"
 	"github.com/dariobaldi/halendar_back/internal/data"
+	"github.com/dariobaldi/halendar_back/internal/push"
 	"github.com/dariobaldi/halendar_back/internal/secretbox"
 	"github.com/google/uuid"
 	"halendar/calendar"
@@ -137,7 +138,7 @@ func (app *app) importMessages(account data.EmailAccount, msgs []mail.Message) {
 			continue // already imported by a previous, overlapping sync
 		}
 
-		app.background(func() { app.analyzeEmailMessage(account.UserID, record, record.Body) })
+		app.background(func() { app.analyzeEmailMessage(account.UserID, record, record.Body, true) })
 	}
 }
 
@@ -237,7 +238,10 @@ type extractedSlot struct {
 // whether it's a genuine participation request, and -- when it is -- extracts the
 // candidate time slots, checks each against the calendar, and drafts a reply:
 // confirming a free slot, or declining and suggesting alternatives when none were.
-func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, body string) {
+// notify controls whether a push notification is sent for a newly-found proposal --
+// true for a message seen for the first time, false for a re-analysis (the user
+// already saw it, so re-running the prompt shouldn't notify them again).
+func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, body string, notify bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
@@ -276,6 +280,8 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 		app.draftEventReply(ctx, userID, calSource, loc, msg, &event)
 		if err := app.models.EmailEvents.Upsert(&event); err != nil {
 			app.logger.Error("email analysis: storing extracted event: " + err.Error())
+		} else if notify {
+			app.notifyNewProposal(userID, event, msg)
 		}
 	} else if err := app.models.EmailEvents.DeleteForMessage(msg.ID); err != nil {
 		// Only matters on a re-analysis where a previous pass had wrongly flagged an
@@ -284,6 +290,40 @@ func (app *app) analyzeEmailMessage(userID uuid.UUID, msg data.EmailMessage, bod
 	}
 
 	app.SendToWsUser(userID, app.retriveWebSocket("halendar"), envelope{"type": "email_messages", "refresh": true})
+}
+
+// notifyNewProposal pushes a real OS-level notification (not just the in-app
+// websocket refresh) to every device registered for the user, carrying the
+// proposal's id so tapping it can open the app straight to that item. Uses FCM's
+// "notification" payload, which Android's system displays automatically even while
+// the app is backgrounded or fully closed -- no extra app code needed for that part.
+func (app *app) notifyNewProposal(userID uuid.UUID, event data.EmailMessageEvent, msg data.EmailMessage) {
+	devices, err := app.models.Devices.GetForUser(userID)
+	if err != nil {
+		app.logger.Error("push notify: listing devices: " + err.Error())
+		return
+	}
+	if len(devices) == 0 {
+		return
+	}
+
+	body := firstNonEmpty(msg.FromName, msg.FromAddress)
+	if msg.Subject != "" {
+		body += ": " + msg.Subject
+	}
+	notification := push.Notification{
+		Title: "New meeting request",
+		Body:  body,
+		Data:  map[string]string{"type": "proposal", "proposal_id": event.ID.String()},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for _, d := range devices {
+		if err := app.push.Send(ctx, d.PushToken, notification); err != nil {
+			app.logger.Error("push notify: sending to device: " + err.Error())
+		}
+	}
 }
 
 // reanalyzeEmailMessagesHandler re-runs AI analysis on every message already stored
@@ -304,7 +344,7 @@ func (app *app) reanalyzeEmailMessagesHandler(w http.ResponseWriter, r *http.Req
 	for _, msg := range messages {
 		if msg.Body != "" {
 			msg := msg
-			app.background(func() { app.analyzeEmailMessage(user.ID, msg, msg.Body) })
+			app.background(func() { app.analyzeEmailMessage(user.ID, msg, msg.Body, false) })
 			continue
 		}
 		needsRefetch[msg.EmailAccountID] = append(needsRefetch[msg.EmailAccountID], msg)
@@ -344,7 +384,7 @@ func (app *app) reanalyzeAccountMessages(userID, accountID uuid.UUID, messages [
 			app.logger.Error(fmt.Sprintf("reanalyze: reading uid %d: %s", msg.IMAPUID, err.Error()))
 			continue
 		}
-		app.analyzeEmailMessage(userID, msg, full.Text)
+		app.analyzeEmailMessage(userID, msg, full.Text, false)
 	}
 }
 
