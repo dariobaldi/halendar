@@ -49,3 +49,10 @@ CALDAV_TIMEZONE=Europe/Paris
 # doesn't need to be set; override it only when running the API outside compose.
 OLLAMA_MODEL=gemma3:1b
 OLLAMA_BASE_URL=http://ollama:11434
+
+# Push notifications (Firebase Cloud Messaging). FCM_SERVICE_ACCOUNT_FILE is a path
+# to the JSON key downloaded from Firebase Console > Project Settings > Service
+# Accounts > Generate new private key. Without these, /v1/push/* endpoints return
+# a clean "not configured" error rather than failing to start.
+FCM_PROJECT_ID=your-firebase-project-id
+FCM_SERVICE_ACCOUNT_FILE=/app/firebase-service-account.json

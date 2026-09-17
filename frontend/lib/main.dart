@@ -1,6 +1,7 @@
 import 'package:halendar_front/pages/home_shell.dart';
 import 'package:halendar_front/pages/login.dart';
 import 'package:halendar_front/services/auth.dart';
+import 'package:halendar_front/services/push_notifications.dart';
 import 'package:halendar_front/state/theme_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -38,6 +39,13 @@ class MyApp extends StatelessWidget {
                   body: Center(child: CircularProgressIndicator()),
                 ),
               );
+            }
+            // Register (or refresh) this device's push token with the backend
+            // whenever a user is signed in — covers both "already logged in at
+            // launch" and "logs in during this session", since this builder
+            // runs on every isLoggedInStream emission.
+            if (snapshot.hasData && snapshot.data != null) {
+              PushNotificationsService.instance.registerForUser();
             }
             return MaterialApp(
               title: 'Halendar',

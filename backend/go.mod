@@ -1,6 +1,6 @@
 module github.com/dariobaldi/halendar_back
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/go-mail/mail/v2 v2.3.0
@@ -11,6 +11,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/tomasen/realip v0.0.0-20180522021738-f0c99a92ddce
 	golang.org/x/crypto v0.54.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/time v0.15.0
 	halendar v0.0.0
 )
@@ -18,6 +19,7 @@ require (
 replace halendar => ../halendar
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608 // indirect
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8 // indirect
 	github.com/emersion/go-message v0.18.2 // indirect

@@ -1,4 +1,5 @@
 .env
+firebase-service-account.json
 data/*
 .VSCodeCounter/*
 bin/*

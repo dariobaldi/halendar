@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:halendar_front/const.dart';
 import 'package:halendar_front/services/notifications.dart';
+import 'package:halendar_front/services/push_notifications.dart';
 import 'package:halendar_front/services/websocket.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -113,6 +114,7 @@ class AuthService {
   }
 
   void logOut() {
+    PushNotificationsService.instance.unregister(); // uses the still-valid token
     _user = null;
     saveUserToBox();
     _controller.add(_user);

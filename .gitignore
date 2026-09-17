@@ -9,3 +9,4 @@ tester
 valgrind.log
 
 frontend_build/
+frontend/android/app/google-services.json

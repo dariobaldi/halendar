@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth.dart';
+import '../services/notifications.dart';
 import '../state/proposals_store.dart';
 import 'history_screen.dart';
 import 'proposals_list_screen.dart';
@@ -27,7 +29,44 @@ class _HomeShellState extends State<HomeShell> {
     ];
 
     return Scaffold(
-      body: IndexedStack(index: _index, children: screens),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: IndexedStack(index: _index, children: screens),
+          ),
+          // In-app banners for addNotification() calls app-wide, including
+          // foreground push notifications — HomeShell stays mounted across
+          // tab switches, so this renders regardless of which tab is active.
+          StreamBuilder<List<HalendarNotification>>(
+            stream: AuthService.instance.notificationsStream,
+            initialData: AuthService.instance.notifications,
+            builder: (context, snapshot) {
+              final notifications = snapshot.data ?? [];
+              return Align(
+                alignment: Alignment.bottomCenter,
+                child: SafeArea(
+                  child: AnimatedList(
+                    shrinkWrap: true,
+                    key: AuthService.instance.listKey,
+                    physics: const NeverScrollableScrollPhysics(),
+                    initialItemCount: notifications.length,
+                    itemBuilder: (context, index, animation) {
+                      if (index >= notifications.length) {
+                        return const SizedBox();
+                      }
+                      return buildNotificationCard(
+                        notifications[index],
+                        context,
+                        animation,
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),

@@ -61,5 +61,14 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPost, "/v1/ai/prompt", app.requirePermission(UserLevel, app.promptHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/ai/test", app.requirePermission(UserLevel, app.testPromptHandler))
 
+	// Devices: register a push token so notifications can be sent to it
+	router.HandlerFunc(http.MethodGet, "/v1/devices", app.requirePermission(UserLevel, app.listDevicesHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/devices", app.requirePermission(UserLevel, app.registerDeviceHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/devices", app.requirePermission(UserLevel, app.unregisterDeviceHandler))
+
+	// Push: test connectivity to Firebase / send a test notification
+	router.HandlerFunc(http.MethodGet, "/v1/push/health", app.requirePermission(UserLevel, app.pushHealthHandler))
+	router.HandlerFunc(http.MethodPost, "/v1/push/test", app.requirePermission(UserLevel, app.testPushHandler))
+
 	return app.recoverPanic(app.enableCORS(app.rateLimit(app.authenticate(app.requestsSlog(router)))))
 }

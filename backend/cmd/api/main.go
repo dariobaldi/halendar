@@ -14,6 +14,7 @@ import (
 	"github.com/dariobaldi/halendar_back/internal/data"
 	"github.com/dariobaldi/halendar_back/internal/mailer"
 	"github.com/dariobaldi/halendar_back/internal/ollama"
+	"github.com/dariobaldi/halendar_back/internal/push"
 	"github.com/dariobaldi/halendar_back/internal/vcs"
 	"github.com/dariobaldi/halendar_back/internal/websocket"
 	_ "github.com/lib/pq"
@@ -55,6 +56,10 @@ type config struct {
 		baseURL string
 		model   string
 	}
+	push struct {
+		projectID          string
+		serviceAccountFile string
+	}
 }
 
 type client struct {
@@ -71,6 +76,7 @@ type app struct {
 	mailbox         *mail.Mailbox
 	calendar        *calendar.Client
 	ollama          *ollama.Client
+	push            *push.Client
 	models          data.Models
 	mu              sync.Mutex
 	websockets      map[string]*websocket.Hub
@@ -139,6 +145,14 @@ func main() {
 	defer db.Close()
 	logger.Info("database connection pool established")
 
+	var fcmServiceAccount []byte
+	if cfg.push.serviceAccountFile != "" {
+		fcmServiceAccount, err = os.ReadFile(cfg.push.serviceAccountFile)
+		if err != nil {
+			logger.Error("could not read FCM_SERVICE_ACCOUNT_FILE: " + err.Error())
+		}
+	}
+
 	app := &app{
 		clientsIPs: make(map[string]*client),
 		config:     cfg,
@@ -149,6 +163,7 @@ func main() {
 		mailbox:    mail.New(mail.ConfigFromEnv()),
 		calendar:   calendar.New(calendar.ConfigFromEnv()),
 		ollama:     ollama.New(cfg.ollama.baseURL, cfg.ollama.model),
+		push:       push.New(push.Config{ProjectID: cfg.push.projectID, ServiceAccountJSON: fcmServiceAccount}),
 		websockets: make(map[string]*websocket.Hub),
 	}
 

@@ -46,6 +46,9 @@ func (cfg *config) GetVariables() {
 
 	cfg.ollama.baseURL = getEnvString("OLLAMA_BASE_URL", "http://ollama:11434")
 	cfg.ollama.model = getEnvString("OLLAMA_MODEL", "gemma3:1b")
+
+	cfg.push.projectID = getEnvString("FCM_PROJECT_ID", "")
+	cfg.push.serviceAccountFile = getEnvString("FCM_SERVICE_ACCOUNT_FILE", "")
 }
 
 // GETENV HELPERS
