@@ -3,6 +3,7 @@ import 'package:halendar_front/services/auth.dart';
 import 'package:lasuite_ui/lasuite_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/layout.dart';
 import '../widgets/theme_toggle_button.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -43,72 +44,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Settings'),
         actions: const [ThemeToggleButton()],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(LaSpacing.base),
-        children: [
-          Card(
-            child: ListTile(
-              leading: LaAvatar(name: displayName),
-              title: Text(
-                displayName,
-                style: LaTextStyles.labelLg.copyWith(
-                  color: colors.contentNeutralPrimary,
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: kPageContentMaxWidth),
+          child: ListView(
+            padding: const EdgeInsets.all(LaSpacing.base),
+            children: [
+              Card(
+                child: ListTile(
+                  leading: LaAvatar(name: displayName),
+                  title: Text(
+                    displayName,
+                    style: LaTextStyles.labelLg.copyWith(
+                      color: colors.contentNeutralPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    user?.username ?? '',
+                    style: LaTextStyles.bodySm.copyWith(
+                      color: colors.contentNeutralSecondary,
+                    ),
+                  ),
                 ),
               ),
-              subtitle: Text(
-                user?.username ?? '',
-                style: LaTextStyles.bodySm.copyWith(
-                  color: colors.contentNeutralSecondary,
+              const SizedBox(height: LaSpacing.base),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        Icons.mail_outline,
+                        color: colors.contentNeutralSecondary,
+                      ),
+                      title: const Text('Open Mail'),
+                      trailing: Icon(
+                        Icons.open_in_new,
+                        size: 18,
+                        color: colors.contentNeutralTertiary,
+                      ),
+                      onTap: _openMailApp,
+                    ),
+                    Divider(height: 1, color: colors.borderSurfacePrimary),
+                    ListTile(
+                      leading: Icon(
+                        Icons.notifications_outlined,
+                        color: colors.contentNeutralSecondary,
+                      ),
+                      title: const Text('Notifications'),
+                      trailing: LaSwitch(
+                        value: _notificationsEnabled,
+                        onChanged: (value) =>
+                            setState(() => _notificationsEnabled = value),
+                      ),
+                      onTap: () => setState(
+                        () => _notificationsEnabled = !_notificationsEnabled,
+                      ),
+                    ),
+                    Divider(height: 1, color: colors.borderSurfacePrimary),
+                    ListTile(
+                      leading: Icon(
+                        Icons.logout,
+                        color: colors.contentNeutralSecondary,
+                      ),
+                      title: const Text('Sign out'),
+                      onTap: _signOut,
+                    ),
+                  ],
                 ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: LaSpacing.base),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: Icon(
-                    Icons.mail_outline,
-                    color: colors.contentNeutralSecondary,
-                  ),
-                  title: const Text('Open Mail'),
-                  trailing: Icon(
-                    Icons.open_in_new,
-                    size: 18,
-                    color: colors.contentNeutralTertiary,
-                  ),
-                  onTap: _openMailApp,
-                ),
-                Divider(height: 1, color: colors.borderSurfacePrimary),
-                ListTile(
-                  leading: Icon(
-                    Icons.notifications_outlined,
-                    color: colors.contentNeutralSecondary,
-                  ),
-                  title: const Text('Notifications'),
-                  trailing: LaSwitch(
-                    value: _notificationsEnabled,
-                    onChanged: (value) =>
-                        setState(() => _notificationsEnabled = value),
-                  ),
-                  onTap: () => setState(
-                    () => _notificationsEnabled = !_notificationsEnabled,
-                  ),
-                ),
-                Divider(height: 1, color: colors.borderSurfacePrimary),
-                ListTile(
-                  leading: Icon(
-                    Icons.logout,
-                    color: colors.contentNeutralSecondary,
-                  ),
-                  title: const Text('Sign out'),
-                  onTap: _signOut,
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

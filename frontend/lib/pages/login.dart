@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lasuite_ui/lasuite_ui.dart';
 
+import '../widgets/halendar_logo.dart';
 import '../widgets/theme_toggle_button.dart';
 
 class LoginPage extends StatefulWidget {
@@ -118,10 +119,16 @@ class _LoginMenuSPage extends State<LoginPage> {
 
             const SizedBox(height: 20),
             // login button
-            LaButton(
-              label: 'Sign In',
-              fullWidth: true,
-              onPressed: () => signUserIn(context),
+            // Matches MyTextFormField's own horizontal padding (20 each
+            // side) so the button lines up with the actual input boxes
+            // instead of the wider row that contains them.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: LaButton(
+                label: 'Sign In',
+                fullWidth: true,
+                onPressed: () => signUserIn(context),
+              ),
             ),
           ],
         ),
@@ -148,6 +155,17 @@ class _LoginMenuSPage extends State<LoginPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Center(
+                    child: HalendarLogo(
+                      strokeColor: colors.contentNeutralPrimary,
+                      // backgroundErrorPrimary (not contentErrorPrimary) --
+                      // the latter is a dark-mode *text-on-error* token and
+                      // resolves to a near-white color, whereas this one is
+                      // the same saturated red in both themes.
+                      dotColor: colors.backgroundErrorPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: LaSpacing.sm),
                   Text(
                     'Halendar',
                     textAlign: TextAlign.center,
