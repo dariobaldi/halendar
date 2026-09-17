@@ -31,7 +31,7 @@
                  sends the OAuth browser tab here so the OS reopens this app instead of
                  leaving the user in the browser. Requires halend.ar to serve
                  /.well-known/assetlinks.json matching this app's signing certificate
-                 (see frontend/web/.well-known/assetlinks.json) -- autoVerify fails
+                 (see frontend/web/.well-known/assetlinks.json); autoVerify fails
                  silently otherwise, and links just open in the browser as before. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
