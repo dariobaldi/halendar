@@ -45,6 +45,28 @@ func (app *app) routes() http.Handler {
 	router.HandlerFunc(http.MethodPatch, "/v1/mail/read", app.requirePermission(UserLevel, app.markMessagesReadHandler))
 	router.HandlerFunc(http.MethodPost, "/v1/mail/move", app.requirePermission(UserLevel, app.moveMessagesHandler))
 
+	// Email accounts: connect messaging accounts (Gmail today, more providers later),
+	// imported in the background once connected. The callback has no Authorization
+	// header -- the provider's redirect calls it directly.
+	router.HandlerFunc(http.MethodGet, "/v1/email-accounts", app.requirePermission(UserLevel, app.listEmailAccountsHandler))
+	router.HandlerFunc(http.MethodGet, "/v1/email-accounts/:provider/connect", app.requirePermission(UserLevel, app.connectEmailAccountHandler))
+	router.HandlerFunc(http.MethodGet, "/v1/email-accounts/:provider/callback", app.emailAccountCallbackHandler)
+	router.HandlerFunc(http.MethodDelete, "/v1/email-accounts/:id", app.requirePermission(UserLevel, app.deleteEmailAccountHandler))
+
+	// Email messages: re-run AI analysis on everything already imported, e.g. after
+	// improving the extraction prompt.
+	router.HandlerFunc(http.MethodPost, "/v1/email-messages/reanalyze", app.requirePermission(UserLevel, app.reanalyzeEmailMessagesHandler))
+
+	// Calendar accounts: connect a calendar to check availability against (Google
+	// Calendar and CalDAV -- Apple iCloud, and any groupware that speaks it -- today,
+	// more providers later). Connecting Gmail links a Google Calendar account too
+	// (see linkGoogleCalendarFromEmail), so this is mainly for a calendar on its own.
+	router.HandlerFunc(http.MethodGet, "/v1/calendar-accounts", app.requirePermission(UserLevel, app.listCalendarAccountsHandler))
+	router.HandlerFunc(http.MethodGet, "/v1/calendar-accounts/:provider/connect", app.requirePermission(UserLevel, app.connectCalendarAccountHandler))
+	router.HandlerFunc(http.MethodGet, "/v1/calendar-accounts/:provider/callback", app.calendarAccountCallbackHandler)
+	router.HandlerFunc(http.MethodPost, "/v1/calendar-accounts/caldav", app.requirePermission(UserLevel, app.connectCaldavCalendarHandler))
+	router.HandlerFunc(http.MethodDelete, "/v1/calendar-accounts/:id", app.requirePermission(UserLevel, app.deleteCalendarAccountHandler))
+
 	// Calendar
 	router.HandlerFunc(http.MethodGet, "/v1/calendar/health", app.requirePermission(UserLevel, app.calendarHealthHandler))
 	router.HandlerFunc(http.MethodGet, "/v1/calendar/calendars", app.requirePermission(UserLevel, app.listCalendarsHandler))

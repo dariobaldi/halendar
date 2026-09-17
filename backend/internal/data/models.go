@@ -15,15 +15,23 @@ var (
 )
 
 type Models struct {
-	Devices DeviceModel
-	Tokens  TokenModel
-	Users   UserModel
+	Devices          DeviceModel
+	Tokens           TokenModel
+	Users            UserModel
+	EmailAccounts    EmailAccountModel
+	EmailMessages    EmailMessageModel
+	EmailEvents      EmailEventModel
+	CalendarAccounts CalendarAccountModel
 }
 
 func NewModels(db *sql.DB) Models {
 	return Models{
-		Devices: DeviceModel{DB: db},
-		Tokens:  TokenModel{DB: db},
-		Users:   UserModel{DB: db},
+		Devices:          DeviceModel{DB: db},
+		Tokens:           TokenModel{DB: db},
+		Users:            UserModel{DB: db},
+		EmailAccounts:    EmailAccountModel{DB: db},
+		EmailMessages:    EmailMessageModel{DB: db},
+		EmailEvents:      EmailEventModel{DB: db},
+		CalendarAccounts: CalendarAccountModel{DB: db},
 	}
 }

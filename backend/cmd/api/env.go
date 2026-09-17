@@ -19,6 +19,7 @@ func (cfg *config) GetVariables() {
 	cfg.env = getEnvString("ENV", "development")
 
 	cfg.port = getEnvInt("PORT", 4000)
+	cfg.frontendURL = getEnvString("FRONTEND_URL", "https://frontend.domain")
 	cfg.cors.trustedOrigins = getEnvSliceString("TRUSTED_ORIGINS", []string{"frontend.domain"})
 
 	cfg.db.dsn = getEnvString("DB_DSN", "postgres://user:password@localhost/database?sslmode=disable")
@@ -49,6 +50,19 @@ func (cfg *config) GetVariables() {
 
 	cfg.push.projectID = getEnvString("FCM_PROJECT_ID", "")
 	cfg.push.serviceAccountFile = getEnvString("FCM_SERVICE_ACCOUNT_FILE", "")
+
+	cfg.security.encryptionKey = getEnvString("ENCRYPTION_KEY", "")
+
+	cfg.google.clientID = getEnvString("GOOGLE_OAUTH_CLIENT_ID", "")
+	cfg.google.clientSecret = getEnvString("GOOGLE_OAUTH_CLIENT_SECRET", "")
+	cfg.google.redirectURL = getEnvString("GOOGLE_OAUTH_REDIRECT_URL", "")
+	cfg.google.calendarRedirectURL = getEnvString("GOOGLE_OAUTH_CALENDAR_REDIRECT_URL", "")
+
+	syncInterval := getEnvString("EMAIL_SYNC_INTERVAL", "1m")
+	cfg.emailSync.interval, err = time.ParseDuration(syncInterval)
+	if err != nil {
+		cfg.emailSync.interval = time.Minute
+	}
 }
 
 // GETENV HELPERS

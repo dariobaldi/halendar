@@ -1,6 +1,7 @@
 PORT=4000
 HOST_IP=0.0.0.0
 USER=user
+FRONTEND_URL=https://fronted.com
 TRUSTED_ORIGINS="https://fronted.com"
 ENV=dev
 
@@ -45,6 +46,9 @@ CALDAV_TIMEZONE=Europe/Paris
 
 # Local LLM (docker-compose "ollama" service, not reachable outside the compose
 # network). Pulled automatically on first start if not already in the volume.
+# gemma3:1b is the lightest/fastest option; 4b/12b/27b trade download size and
+# inference time for better instruction-following (worth it for the structured JSON
+# extraction email analysis relies on -- 1b tends to produce malformed output).
 # OLLAMA_BASE_URL defaults to the in-network service address and normally
 # doesn't need to be set; override it only when running the API outside compose.
 OLLAMA_MODEL=gemma3:1b
@@ -56,3 +60,24 @@ OLLAMA_BASE_URL=http://ollama:11434
 # a clean "not configured" error rather than failing to start.
 FCM_PROJECT_ID=your-firebase-project-id
 FCM_SERVICE_ACCOUNT_FILE=/app/firebase-service-account.json
+
+# Encrypts connected email accounts' OAuth credentials at rest (AES-256-GCM).
+# Generate one with: openssl rand -base64 32
+# Without it, connecting email accounts is disabled but everything else still runs.
+ENCRYPTION_KEY=
+
+# Google Cloud OAuth client, shared by "Connect Gmail" and "Connect Google Calendar"
+# (Console > Google Auth Platform > Clients > OAuth client ID > Web application). Add
+# BOTH redirect URLs below as authorized redirect URIs on that one client -- each must
+# exactly match its value here. Without these, /v1/email-accounts/gmail/* and
+# /v1/calendar-accounts/google/* return "unknown or unconfigured provider" instead of
+# failing to start. Connecting Gmail also requests Calendar access and links a
+# calendar account from the same grant -- GOOGLE_OAUTH_CALENDAR_REDIRECT_URL is only
+# needed for connecting a Google Calendar on its own, without Gmail import.
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_OAUTH_REDIRECT_URL=https://yourdomain.com/v1/email-accounts/gmail/callback
+GOOGLE_OAUTH_CALENDAR_REDIRECT_URL=https://yourdomain.com/v1/calendar-accounts/google/callback
+
+# How often connected accounts are checked for new mail.
+EMAIL_SYNC_INTERVAL=1m

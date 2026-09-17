@@ -11,10 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dariobaldi/halendar_back/internal/calendarimport"
 	"github.com/dariobaldi/halendar_back/internal/data"
+	"github.com/dariobaldi/halendar_back/internal/emailimport"
 	"github.com/dariobaldi/halendar_back/internal/mailer"
 	"github.com/dariobaldi/halendar_back/internal/ollama"
 	"github.com/dariobaldi/halendar_back/internal/push"
+	"github.com/dariobaldi/halendar_back/internal/secretbox"
 	"github.com/dariobaldi/halendar_back/internal/vcs"
 	"github.com/dariobaldi/halendar_back/internal/websocket"
 	_ "github.com/lib/pq"
@@ -28,9 +31,10 @@ var (
 )
 
 type config struct {
-	port int
-	env  string
-	cors struct {
+	port        int
+	env         string
+	frontendURL string // where an OAuth connect flow sends the browser once it's done
+	cors        struct {
 		trustedOrigins []string
 	}
 	db struct {
@@ -60,6 +64,18 @@ type config struct {
 		projectID          string
 		serviceAccountFile string
 	}
+	security struct {
+		encryptionKey string // base64 AES-256 key; secretbox.ParseKey decodes it
+	}
+	google struct {
+		clientID            string
+		clientSecret        string
+		redirectURL         string // .../email-accounts/gmail/callback (also covers Calendar, bundled into the same grant)
+		calendarRedirectURL string // .../calendar-accounts/google/callback (standalone Calendar-only connect)
+	}
+	emailSync struct {
+		interval time.Duration
+	}
 }
 
 type client struct {
@@ -68,20 +84,23 @@ type client struct {
 }
 
 type app struct {
-	clientsIPs      map[string]*client
-	config          config
-	logger          *slog.Logger
-	fileLogger      *slog.Logger
-	mailer          mailer.Mailer
-	mailbox         *mail.Mailbox
-	calendar        *calendar.Client
-	ollama          *ollama.Client
-	push            *push.Client
-	models          data.Models
-	mu              sync.Mutex
-	websockets      map[string]*websocket.Hub
-	wg              sync.WaitGroup
-	summaryUpdateCh chan struct{}
+	clientsIPs        map[string]*client
+	config            config
+	logger            *slog.Logger
+	fileLogger        *slog.Logger
+	mailer            mailer.Mailer
+	mailbox           *mail.Mailbox
+	calendar          *calendar.Client
+	ollama            *ollama.Client
+	push              *push.Client
+	models            data.Models
+	emailProviders    emailimport.Registry
+	calendarProviders calendarimport.Registry
+	encryptionKey     secretbox.Key
+	mu                sync.Mutex
+	websockets        map[string]*websocket.Hub
+	wg                sync.WaitGroup
+	summaryUpdateCh   chan struct{}
 }
 
 func main() {
@@ -153,21 +172,45 @@ func main() {
 		}
 	}
 
+	// A missing or invalid ENCRYPTION_KEY disables connecting email accounts (there
+	// would be nothing safe to encrypt their credentials with) rather than the whole
+	// API, in keeping with how a missing mail/calendar/push config degrades below.
+	encryptionKey, keyErr := secretbox.ParseKey(cfg.security.encryptionKey)
+	emailProviders := emailimport.Registry{}
+	calendarProviders := calendarimport.Registry{}
+	switch {
+	case keyErr != nil:
+		logger.Error("invalid or missing ENCRYPTION_KEY: " + keyErr.Error() + " (generate one with: openssl rand -base64 32); connecting email/calendar accounts is disabled")
+	case cfg.google.clientID == "" || cfg.google.clientSecret == "":
+		logger.Info("GOOGLE_OAUTH_CLIENT_ID/SECRET not set: Gmail and Google Calendar account connection is disabled")
+	default:
+		emailProviders["gmail"] = emailimport.NewGmailProvider(cfg.google.clientID, cfg.google.clientSecret, cfg.google.redirectURL)
+		if cfg.google.calendarRedirectURL != "" {
+			calendarProviders["google"] = calendarimport.NewGoogleProvider(cfg.google.clientID, cfg.google.clientSecret, cfg.google.calendarRedirectURL)
+		} else {
+			logger.Info("GOOGLE_OAUTH_CALENDAR_REDIRECT_URL not set: standalone Google Calendar connection is disabled (connecting Gmail still links a calendar automatically)")
+		}
+	}
+
 	app := &app{
-		clientsIPs: make(map[string]*client),
-		config:     cfg,
-		logger:     logger,
-		fileLogger: loggerFile,
-		models:     data.NewModels(db),
-		mailer:     mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
-		mailbox:    mail.New(mail.ConfigFromEnv()),
-		calendar:   calendar.New(calendar.ConfigFromEnv()),
-		ollama:     ollama.New(cfg.ollama.baseURL, cfg.ollama.model),
-		push:       push.New(push.Config{ProjectID: cfg.push.projectID, ServiceAccountJSON: fcmServiceAccount}),
-		websockets: make(map[string]*websocket.Hub),
+		clientsIPs:        make(map[string]*client),
+		config:            cfg,
+		logger:            logger,
+		fileLogger:        loggerFile,
+		models:            data.NewModels(db),
+		mailer:            mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
+		mailbox:           mail.New(mail.ConfigFromEnv()),
+		calendar:          calendar.New(calendar.ConfigFromEnv()),
+		ollama:            ollama.New(cfg.ollama.baseURL, cfg.ollama.model),
+		push:              push.New(push.Config{ProjectID: cfg.push.projectID, ServiceAccountJSON: fcmServiceAccount}),
+		websockets:        make(map[string]*websocket.Hub),
+		emailProviders:    emailProviders,
+		calendarProviders: calendarProviders,
+		encryptionKey:     encryptionKey,
 	}
 
 	app.backgroudProcess()
+	app.emailSyncLoop()
 	err = app.serve()
 	if err != nil {
 		logger.Error(err.Error())
