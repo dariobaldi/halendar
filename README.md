@@ -148,4 +148,4 @@ Gaps and opportunities found while streamlining setup for this README:
 
 ## License
 
-(Add a license before treating this as open source -- none is currently declared.)
+[GNU General Public License v3.0](LICENSE).
