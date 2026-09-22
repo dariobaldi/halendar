@@ -118,7 +118,7 @@ already fully scripted:
    database dump to/from your local Postgres for debugging with real(ish)
    data.
 
-There's a Postman collection at
+There's a Postman collection at 
 [`backend/docs/postman_collection.json`](backend/docs/postman_collection.json)
 covering every endpoint, useful for exploring the API directly.
 
