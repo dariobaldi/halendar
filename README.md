@@ -45,7 +45,7 @@ get it (Gmail app passwords, Google OAuth client, Firebase service account,
 etc.) -- anything you skip just disables that one feature cleanly, nothing
 fails to start. See [backend/README.md](backend/README.md) and
 [frontend/README.md](frontend/README.md) for the full reference and everything
-below in more depth.
+below in more depth.   
 
 Deploying to your own server later is a separate, optional step:
 `make setup-deploy` (re-runnable any time). 
