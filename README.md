@@ -144,7 +144,7 @@ Gaps and opportunities found while streamlining setup for this README:
   it yet -- the whole app is English-only.
 - **Admin/user management UI polish.** `frontend/lib/pages/settings/users.dart`
   covers the basics (list, activate, change access level); bulk actions and
-  an invite flow (see above) would round it out.
+  an invite flow (see above) would round it out.  
 
 ## License
 
