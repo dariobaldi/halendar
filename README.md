@@ -134,7 +134,7 @@ Gaps and opportunities found while streamlining setup for this README:
   and `flutter analyze`/`flutter test` on every PR would catch regressions
   before they reach `main`.
 - **iOS push notifications.** `PushNotificationsService` in the frontend is
-  explicitly Android-only today (`frontend/lib/services/push_notifications.dart`);
+  explicitly Android-only  today (`frontend/lib/services/push_notifications.dart`);
   Firebase Core is already a dependency, so wiring up APNs is mostly frontend
   + Firebase Console config.
 - **More mail/calendar providers.** Gmail + generic IMAP for mail, Google
