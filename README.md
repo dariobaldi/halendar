@@ -48,7 +48,7 @@ fails to start. See [backend/README.md](backend/README.md) and
 below in more depth.
 
 Deploying to your own server later is a separate, optional step:
-`make setup-deploy` (re-runnable any time).
+`make setup-deploy` (re-runnable any time). 
 
 ## Architecture
 
