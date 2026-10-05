@@ -4,7 +4,7 @@ Halendar reads your inbox for meeting requests, checks them against your calenda
 drafts a reply, and lets you confirm or skip each one from a simple three-tab app.
 It runs as your own self-hosted instance: a Go API, a Postgres database, a local
 Ollama model for classification (or your own Claude/Gemini key), and a Flutter app
-(web, Android, iOS, desktop).
+(web, Android, iOS, desktop).  
 
 |  |  |
 |---|---|
